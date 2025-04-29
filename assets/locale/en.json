@@ -1,0 +1,37 @@
+{
+    "common": {
+      "back": "Back",
+      "edit": "Edit",
+      "save": "Save",
+      "cancel": "Cancel",
+      "done": "Done",
+      "apply": "Apply",
+      "search": "Search",
+      "logout": "Log Out"
+    },
+    "profile": {
+      "title": "Profile",
+      "editProfile": "Edit Profile",
+      "personalInfo": "Personal Information",
+      "paymentMethods": "Payment Methods",
+      "savedAddresses": "Saved Addresses"
+    },
+    "settings": {
+      "title": "Settings",
+      "account": "Account",
+      "preferences": "Preferences",
+      "notifications": "Notifications",
+      "darkMode": "Dark Mode",
+      "language": "Language",
+      "support": "Support",
+      "helpCenter": "Help Center",
+      "contactSupport": "Contact Support",
+      "about": "About",
+      "version": "Version"
+    },
+    "language": {
+      "title": "Language",
+      "description": "Select your preferred language for the app. All content will be displayed in the selected language.",
+      "searchLanguages": "Search languages"
+    }
+  }

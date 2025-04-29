@@ -1,0 +1,37 @@
+{
+    "common": {
+      "back": "वापस",
+      "edit": "संपादित करें",
+      "save": "सहेजें",
+      "cancel": "रद्द करें",
+      "done": "हो गया",
+      "apply": "लागू करें",
+      "search": "खोजें",
+      "logout": "लॉग आउट"
+    },
+    "profile": {
+      "title": "प्रोफ़ाइल",
+      "editProfile": "प्रोफ़ाइल संपादित करें",
+      "personalInfo": "व्यक्तिगत जानकारी",
+      "paymentMethods": "भुगतान के तरीके",
+      "savedAddresses": "सहेजे गए पते"
+    },
+    "settings": {
+      "title": "सेटिंग्स",
+      "account": "खाता",
+      "preferences": "प्राथमिकताएँ",
+      "notifications": "सूचनाएं",
+      "darkMode": "डार्क मोड",
+      "language": "भाषा",
+      "support": "सहायता",
+      "helpCenter": "सहायता केंद्र",
+      "contactSupport": "सहायता से संपर्क करें",
+      "about": "के बारे में",
+      "version": "संस्करण"
+    },
+    "language": {
+      "title": "भाषा",
+      "description": "ऐप के लिए अपनी पसंदीदा भाषा चुनें। सभी सामग्री चयनित भाषा में प्रदर्शित की जाएगी।",
+      "searchLanguages": "भाषाएँ खोजें"
+    }
+  }
