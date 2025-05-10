@@ -11,9 +11,7 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true
     },
@@ -24,7 +22,7 @@
       },
       "package": "com.hemanshupatil.parcelo"
     },
-    "web": {            
+    "web": {
       "favicon": "./assets/favicon.png"
     },
     "extra": {
@@ -33,7 +31,17 @@
       }
     },
     "plugins": [
-      "expo-font"
+      "expo-font",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "kotlinVersion": "1.8.0",
+            "composeCompilerVersion": "1.5.11"
+          }
+        }
+      ],
+      "./custom-plugin"
     ],
     "owner": "hemanshu-patil"
   }

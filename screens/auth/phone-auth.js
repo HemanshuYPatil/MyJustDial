@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import {
   StyleSheet,
   Text,
@@ -15,8 +15,7 @@ import {
 import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
 import { useFonts } from "expo-font";
-import { FirebaseRecaptchaVerifierModal } from "expo-firebase-recaptcha";
-import { PhoneAuthProvider, signInWithCredential } from "firebase/auth";
+import { PhoneAuthProvider, signInWithCredential, RecaptchaVerifier } from "firebase/auth";
 import { auth } from "../../lib/db/firebase";
 
 export default function SignUpScreen({ navigation }) {
@@ -37,6 +36,19 @@ export default function SignUpScreen({ navigation }) {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    // Initialize reCAPTCHA
+    window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
+      'size': 'normal',
+      'callback': (response) => {
+        // reCAPTCHA solved, allow signInWithPhoneNumber.
+      },
+      'expired-callback': () => {
+        // Response expired. Ask user to solve reCAPTCHA again.
+      }
+    });
+  }, []);
+
   if (!fontsLoaded) {
     return null;
   }
@@ -47,18 +59,23 @@ export default function SignUpScreen({ navigation }) {
       const phoneProvider = new PhoneAuthProvider(auth);
       const id = await phoneProvider.verifyPhoneNumber(
         phoneNumber,
-        recaptchaVerifier.current
+        window.recaptchaVerifier
       );
       setVerificationId(id);
       setMessage("Verification code has been sent.");
-      setLoading(false);
       navigation.navigate("Verify", {
         verificationId: id,
         phoneNumber: phoneNumber,
       });
     } catch (err) {
-      setMessage(`Error: ${err.message}`);
-    }finally{
+      let errorMessage = "An error occurred during verification.";
+      if (err.code === 'auth/invalid-phone-number') {
+        errorMessage = "The phone number format is incorrect.";
+      } else if (err.code === 'auth/too-many-requests') {
+        errorMessage = "Too many attempts. Please try again later.";
+      }
+      setMessage(`Error: ${errorMessage}`);
+    } finally {
       setLoading(false);
     }
   };
@@ -95,10 +112,7 @@ export default function SignUpScreen({ navigation }) {
             />
           </View>
 
-          <FirebaseRecaptchaVerifierModal
-            ref={recaptchaVerifier}
-            firebaseConfig={auth.app.options}
-          />
+         
 
           {/* Continue Button */}
           <TouchableOpacity
@@ -130,6 +144,9 @@ export default function SignUpScreen({ navigation }) {
           </View> */}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Add this div for reCAPTCHA */}
+      <div id="recaptcha-container"></div>
     </SafeAreaView>
   );
 }

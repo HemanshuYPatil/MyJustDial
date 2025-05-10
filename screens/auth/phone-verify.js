@@ -14,7 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFonts } from "expo-font";
 import { PhoneAuthProvider, signInWithCredential } from "firebase/auth";
 import { auth } from "../../lib/db/firebase";
-import { FirebaseRecaptchaVerifierModal } from "expo-firebase-recaptcha";
+// import { FirebaseRecaptchaVerifierModal } from "expo-firebase-recaptcha";
 
 export default function VerificationCodeScreen({ navigation, route }) {
   const { number, verificationId } = route.params;
@@ -78,14 +78,20 @@ export default function VerificationCodeScreen({ navigation, route }) {
       const userCredential = await signInWithCredential(auth, credential);
       const isNew = userCredential._tokenResponse.isNewUser;
 
-
       if (isNew) {
         navigation.navigate("NewSignUp");
       } else {
         navigation.navigate("Home");
       }
     } catch (err) {
-      console.log("Error", err.message);
+      let errorMessage = "An error occurred during verification.";
+      if (err.code === 'auth/invalid-verification-code') {
+        errorMessage = "Invalid verification code. Please try again.";
+      } else if (err.code === 'auth/code-expired') {
+        errorMessage = "Verification code has expired. Please request a new one.";
+      }
+      console.log("Error", errorMessage);
+      // You might want to show this error to the user
     }
   };
 
@@ -150,10 +156,7 @@ export default function VerificationCodeScreen({ navigation, route }) {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
-      <FirebaseRecaptchaVerifierModal
-        ref={recaptchaVerifier}
-        firebaseConfig={auth.app.options}
-      />
+    
       <View style={styles.headerContainer}>
         <Text style={styles.headerText}>
           Enter the {DIGIT_COUNT}-digit code sent to you at

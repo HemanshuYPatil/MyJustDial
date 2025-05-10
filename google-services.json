@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "718354714847",
+    "firebase_url": "https://parcelo-e9635-default-rtdb.firebaseio.com",
+    "project_id": "parcelo-e9635",
+    "storage_bucket": "parcelo-e9635.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:718354714847:android:3791eadaa889b59c47996a",
+        "android_client_info": {
+          "package_name": "com.hemanshupatil.parcelo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBmCTlAExoDaKoHA2l-5NJom_JC9al-d20"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

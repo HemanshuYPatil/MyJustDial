@@ -15,7 +15,7 @@ import {
 import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
 import { useFonts } from "expo-font";
-import { FirebaseRecaptchaVerifierModal } from "expo-firebase-recaptcha";
+// import { FirebaseRecaptchaVerifierModal } from "expo-firebase-recaptcha";
 import {
   PhoneAuthProvider,
   signInWithCredential,
@@ -130,10 +130,10 @@ export default function NewSignUp({ navigation }) {
             />
           </View>
 
-          <FirebaseRecaptchaVerifierModal
+          {/* <FirebaseRecaptchaVerifierModal
             ref={recaptchaVerifier}
             firebaseConfig={auth.app.options}
-          />
+          /> */}
 
           {/* Continue Button */}
           <TouchableOpacity
