@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import {
   StyleSheet,
   Text,
@@ -7,16 +7,32 @@ import {
   TouchableOpacity,
   TextInput,
   Platform,
-  Image,
   KeyboardAvoidingView,
   ScrollView,
   ActivityIndicator,
+  Alert,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
-import { Ionicons } from "@expo/vector-icons";
 import { useFonts } from "expo-font";
-import { PhoneAuthProvider, signInWithCredential, RecaptchaVerifier } from "firebase/auth";
+import * as SplashScreen from 'expo-splash-screen';
+import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
+import { PhoneAuthProvider } from "firebase/auth";
 import { auth } from "../../lib/db/firebase";
+
+// Keep the splash screen visible while we fetch resources
+// SplashScreen.preventAutoHideAsync();
+
+const  firebaseConfig = {
+  apiKey: "AIzaSyCV1y35Yn5kd1h-S1ZsPPUpGdYEnT-Z7HQ",
+  authDomain: "parcelo-e9635.firebaseapp.com",
+  databaseURL: "https://parcelo-e9635-default-rtdb.firebaseio.com",
+  projectId: "parcelo-e9635",
+  storageBucket: "parcelo-e9635.firebasestorage.app",
+  messagingSenderId: "718354714847",
+  appId: "1:718354714847:web:4c3e308da5e8967b47996a",
+  measurementId: "G-78S7YPE5MC",
+};
+
 
 export default function SignUpScreen({ navigation }) {
   const [phoneNumber, setPhoneNumber] = useState("+91 ");
@@ -24,56 +40,84 @@ export default function SignUpScreen({ navigation }) {
     code: "+91",
     flag: "🇮🇳",
   });
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
+  
+  const recaptchaVerifier = React.useRef(null);
+  
   const [fontsLoaded] = useFonts({
     Regular: require("../../assets/fonts/regular.ttf"),
     Medium: require("../../assets/fonts/medium.ttf"),
     Bold: require("../../assets/fonts/bold.ttf"),
   });
 
-  const recaptchaVerifier = useRef(null);
-  const [verificationId, setVerificationId] = useState(null);
-  const [code, setCode] = useState("");
-  const [message, setMessage] = useState("");
-  const [loading, setLoading] = useState(false);
-
   useEffect(() => {
-    // Initialize reCAPTCHA
-    window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
-      'size': 'normal',
-      'callback': (response) => {
-        // reCAPTCHA solved, allow signInWithPhoneNumber.
-      },
-      'expired-callback': () => {
-        // Response expired. Ask user to solve reCAPTCHA again.
+    // Hide splash screen when fonts are loaded
+    const hideSplash = async () => {
+      if (fontsLoaded) {
+        await SplashScreen.hideAsync();
       }
-    });
-  }, []);
+    };
+    
+    hideSplash();
+  }, [fontsLoaded]);
 
   if (!fontsLoaded) {
     return null;
   }
 
+  const validatePhoneNumber = (number) => {
+    // Basic validation - remove spaces and check if it has a valid format
+    const cleanNumber = number.replace(/\s+/g, '');
+    return /^\+[1-9]\d{1,14}$/.test(cleanNumber);
+  };
+
   const sendVerification = async () => {
     try {
+      // Validate phone number before proceeding
+      if (!validatePhoneNumber(phoneNumber)) {
+        setMessage("Please enter a valid phone number");
+        return;
+      }
+
       setLoading(true);
+      
+      // Make sure recaptchaVerifier is available
+      if (!recaptchaVerifier.current) {
+        setMessage("reCAPTCHA not loaded. Please try again.");
+        setLoading(false);
+        return;
+      }
+
+      // Clean the phone number by removing spaces
+      const cleanPhoneNumber = phoneNumber.replace(/\s+/g, '');
+      
       const phoneProvider = new PhoneAuthProvider(auth);
-      const id = await phoneProvider.verifyPhoneNumber(
-        phoneNumber,
-        window.recaptchaVerifier
+      const verificationId = await phoneProvider.verifyPhoneNumber(
+        cleanPhoneNumber,
+        recaptchaVerifier.current
       );
-      setVerificationId(id);
-      setMessage("Verification code has been sent.");
+      
+      setMessage("Verification code has been sent!");
+      
+      // Navigate to verification screen with necessary params
       navigation.navigate("Verify", {
-        verificationId: id,
-        phoneNumber: phoneNumber,
+        verificationId,
+        phoneNumber: cleanPhoneNumber,
       });
     } catch (err) {
+      console.error("Firebase phone auth error:", err);
+      
       let errorMessage = "An error occurred during verification.";
       if (err.code === 'auth/invalid-phone-number') {
         errorMessage = "The phone number format is incorrect.";
       } else if (err.code === 'auth/too-many-requests') {
         errorMessage = "Too many attempts. Please try again later.";
+      } else if (err.code === 'auth/captcha-check-failed') {
+        errorMessage = "reCAPTCHA verification failed. Please try again.";
       }
+      
+      Alert.alert("Authentication Error", errorMessage);
       setMessage(`Error: ${errorMessage}`);
     } finally {
       setLoading(false);
@@ -82,7 +126,15 @@ export default function SignUpScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar style="dark" hidden={false} />
+      <StatusBar style="dark" />
+      
+      {/* Firebase RecaptchaVerifier - invisible but needed for phone auth */}
+      <FirebaseRecaptchaVerifierModal
+        ref={recaptchaVerifier}
+        firebaseConfig={firebaseConfig}
+        attemptInvisibleVerification={true}
+      />
+      
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.keyboardAvoid}
@@ -100,7 +152,6 @@ export default function SignUpScreen({ navigation }) {
           <View style={styles.inputContainer}>
             <TouchableOpacity style={styles.countrySelector}>
               <Text style={styles.countryFlag}>{selectedCountry.flag}</Text>
-              {/* <Ionicons name="chevron-down" size={16} color="#000" /> */}
             </TouchableOpacity>
 
             <TextInput
@@ -109,14 +160,16 @@ export default function SignUpScreen({ navigation }) {
               onChangeText={setPhoneNumber}
               keyboardType="phone-pad"
               autoFocus
+              placeholder="+91 98765 43210"
             />
           </View>
 
-         
-
           {/* Continue Button */}
           <TouchableOpacity
-            style={styles.continueButton}
+            style={[
+              styles.continueButton,
+              loading ? styles.disabledButton : null
+            ]}
             onPress={sendVerification}
             disabled={loading}
           >
@@ -127,26 +180,30 @@ export default function SignUpScreen({ navigation }) {
             )}
           </TouchableOpacity>
 
-          {message ? <Text style={{ marginTop: 20 }}>{message}</Text> : null}
-          {/* Privacy Policy */}
-          {/* <View style={styles.policyContainer}>
-            <Text style={styles.policyText}>
-              This site is protected by reCAPTCHA and the Google{" "}
+          {message ? (
+            <Text style={[
+              styles.messageText,
+              message.includes("Error") ? styles.errorMessage : styles.successMessage
+            ]}>
+              {message}
             </Text>
-            <TouchableOpacity>
-              <Text style={styles.policyLink}>Privacy Policy</Text>
-            </TouchableOpacity>
-            <Text style={styles.policyText}> and </Text>
+          ) : null}
+          
+          {/* Privacy Policy */}
+          <View style={styles.policyContainer}>
+            <Text style={styles.policyText}>
+              By continuing, you agree to our{" "}
+            </Text>
             <TouchableOpacity>
               <Text style={styles.policyLink}>Terms of Service</Text>
             </TouchableOpacity>
-            <Text style={styles.policyText}> apply.</Text>
-          </View> */}
+            <Text style={styles.policyText}> and </Text>
+            <TouchableOpacity>
+              <Text style={styles.policyLink}>Privacy Policy</Text>
+            </TouchableOpacity>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
-
-      {/* Add this div for reCAPTCHA */}
-      <div id="recaptcha-container"></div>
     </SafeAreaView>
   );
 }
@@ -171,7 +228,6 @@ const styles = StyleSheet.create({
   },
   headerText: {
     fontSize: 24,
-    // fontWeight: "bold",
     color: "#000",
     fontFamily: "Bold",
   },
@@ -208,66 +264,42 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 20,
   },
+  disabledButton: {
+    backgroundColor: "#666",
+  },
   continueButtonText: {
     color: "#fff",
     fontSize: 16,
     fontFamily: "Regular",
   },
-  dividerContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginVertical: 20,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: "#e0e0e0",
-  },
-  dividerText: {
-    marginHorizontal: 10,
-    color: "#777",
+  messageText: {
+    textAlign: "center",
+    marginVertical: 10,
+    fontFamily: "Regular",
     fontSize: 14,
   },
-  socialButtonsContainer: {
-    marginBottom: 20,
+  errorMessage: {
+    color: "#d32f2f",
   },
-  socialButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#f0f0f0",
-    borderRadius: 30,
-    paddingVertical: 14,
-    marginBottom: 12,
-  },
-  socialIcon: {
-    width: 20,
-    height: 20,
-    marginRight: 10,
-  },
-  socialButtonText: {
-    fontSize: 16,
-    fontWeight: "500",
-  },
-  termsText: {
-    fontSize: 14,
-    color: "#777",
-    lineHeight: 20,
-    marginBottom: 40,
+  successMessage: {
+    color: "#388e3c",
   },
   policyContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
     marginTop: "auto",
     paddingTop: 20,
+    justifyContent: "center",
   },
   policyText: {
     fontSize: 14,
     color: "#777",
+    fontFamily: "Regular",
   },
   policyLink: {
     fontSize: 14,
     color: "#000",
     textDecorationLine: "underline",
+    fontFamily: "Medium",
   },
 });

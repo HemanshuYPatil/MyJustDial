@@ -1,0 +1,35 @@
+buildscript {
+  ext {
+    buildToolsVersion = "34.0.0"
+    minSdkVersion = 24
+    compileSdkVersion = 34
+    targetSdkVersion = 34
+    kotlinVersion = "2.1.0"
+  }
+  repositories {
+    google()
+    mavenCentral()
+    maven { url 'https://jitpack.io' }
+  }
+  dependencies {
+    classpath("com.android.tools.build:gradle:8.1.1")
+    classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")
+  }
+}
+
+plugins {
+  id 'org.jetbrains.kotlin.android' version '2.1.0' apply false
+}
+
+allprojects {
+    repositories {
+        maven {
+            url(new File(["node", "--print", "require.resolve('expo-modules-core/package.json')"].execute(null, rootDir).text.trim(), "../android/maven"))
+        }
+        maven {
+            url(new File(["node", "--print", "require.resolve('expo-splash-screen/package.json')"].execute(null, rootDir).text.trim(), "../android/maven"))
+        }
+        google()
+        mavenCentral()
+    }
+}

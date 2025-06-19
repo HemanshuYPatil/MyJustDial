@@ -27,7 +27,7 @@ import LanguageScreen from "./screens/settings/language.js";
 import { LanguageProvider } from "./context/languagecontext.js";
 import DeveloperDetailsScreen from "./screens/settings/developer.js";
 import Support from "./screens/settings/support.js";
-
+import './lib/db/firebase.js';
 
 const Stack = createStackNavigator();
 
@@ -121,6 +121,11 @@ export default function App() {
               />
               <Stack.Screen
                 name="ChatDetail"
+                component={ChatDetailScreen}
+                options={{ headerShown: false }}
+              />
+               <Stack.Screen
+                name="auth"
                 component={ChatDetailScreen}
                 options={{ headerShown: false }}
               />
