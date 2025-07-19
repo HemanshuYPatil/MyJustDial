@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   StyleSheet,
   Text,
@@ -9,6 +9,7 @@ import {
   Image,
   Platform,
   Switch,
+  Alert,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import {
@@ -19,9 +20,13 @@ import {
   MaterialCommunityIcons,
 } from "@expo/vector-icons";
 import { useFonts } from "expo-font";
-import { auth } from "../lib/db/firebase";
+import { auth, db } from "../lib/db/firebase";
 import { getAuth, signOut } from "firebase/auth";
 import { useLanguage } from "../context/languagecontext";
+import Constants from "expo-constants";
+import { doc, updateDoc, getDoc } from "firebase/firestore";
+import { useFocusEffect } from "@react-navigation/native";
+import { getuserphone } from "../lib/query/user";
 
 export default function ProfileScreen({ navigation }) {
   const [fontsLoaded] = useFonts({
@@ -31,29 +36,155 @@ export default function ProfileScreen({ navigation }) {
   });
 
   const user = auth.currentUser;
-  const usernumber = user.phoneNumber.replace(/^(\+91)(\d+)/, "$1-$2");
+  const isGuest = !user; // Check if user is logged in
+
+  const [phoneNumber, setPhoneNumber] = useState(null);
+
+  const [currentUser, setCurrentUser] = useState(auth.currentUser);
+useEffect(() => {
+  const fetchPhone = async () => {
+    if (user?.uid) {
+      const phone = await getuserphone(user.uid);
+      setPhoneNumber(phone);
+    }
+  };
+  fetchPhone();
+}, [user]);
+
+useFocusEffect(
+  React.useCallback(() => {
+    const refreshUser = async () => {
+      try {
+        await auth.currentUser.reload(); // Refresh user data from Firebase
+        setCurrentUser(auth.currentUser); // Update local state
+      } catch (err) {
+        console.log("Error refreshing user:", err);
+      }
+    };
+    refreshUser();
+  }, [])
+);
+
+  // Guest user data
+  const guestUserData = {
+    displayName: "Guest User",
+    email: "guest@example.com",
+    profileImage:
+      "https://img.freepik.com/premium-vector/art-illustration_890735-11.jpg?ga=GA1.1.2127828126.1743705572&semt=ais_hybrid&w=740",
+  };
+
+  // Use authenticated user data or guest data
+  const profileData = isGuest
+    ? guestUserData
+    : {
+        displayName: user.displayName || "User",
+        email: user.email || user.phoneNumber || "No email",
+        profileImage:
+          currentUser.photoURL ||
+          "https://img.freepik.com/premium-vector/art-illustration_890735-11.jpg?ga=GA1.1.2127828126.1743705572&semt=ais_hybrid&w=740",
+      };
 
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [darkModeEnabled, setDarkModeEnabled] = useState(false);
+  const [phoneVisible, setPhoneVisible] = useState(false);
 
-  // Toggle handlers
-  const toggleNotifications = () =>
-    setNotificationsEnabled(!notificationsEnabled);
-  const toggleDarkMode = () => setDarkModeEnabled(!darkModeEnabled);
-  if (!fontsLoaded) {
-    return null;
-  }
 
-  const auths = getAuth(); // If you use modular SDK (which you should)
+  useEffect(() => {
+    const fetchVisibility = async () => {
+      if (!isGuest) {
+        const userDoc = await getDoc(doc(db, "users", user.uid));
+        if (userDoc.exists()) {
+          setPhoneVisible(!!userDoc.data().phonenumbervisible);
+        }
+      }
+    };
+    fetchVisibility();
+  }, []);
+
+  const togglePhoneVisibility = async () => {
+    const newValue = !phoneVisible;
+    setPhoneVisible(newValue);
+
+    if (!isGuest) {
+      try {
+        await updateDoc(doc(db, "users", user.uid), {
+          phonenumbervisible: newValue,
+        });
+      } catch (error) {
+        console.error("Failed to update phone visibility:", error);
+        Alert.alert("Error", "Could not update phone visibility.");
+      }
+    }
+  };
 
   const handleLogout = async () => {
-    try {
-      await signOut(auths);
-      console.log("User signed out!");
-      // Optionally navigate the user to the login screen
-      navigation.replace("GetStarted");
-    } catch (error) {
-      console.error("Error signing out:", error);
+    if (isGuest) {
+      // For guest users, just navigate to login
+      Alert.alert(
+        "Guest Session",
+        "You are currently using the app as a guest. Would you like to sign in for a personalized experience?",
+        [
+          {
+            text: "Continue as Guest",
+            style: "cancel",
+          },
+          {
+            text: "Sign In",
+            onPress: () => navigation.replace("login"),
+          },
+        ]
+      );
+    } else {
+      // For authenticated users, sign out
+      try {
+        console.log("User signed out!");
+        const auths = getAuth();
+        await signOut(auths);
+        navigation.replace("login");
+      } catch (error) {
+        console.error("Error signing out:", error);
+        Alert.alert("Error", "Failed to sign out. Please try again.");
+      }
+    }
+  };
+
+  const handleEditProfile = () => {
+    if (isGuest) {
+      Alert.alert(
+        "Sign In Required",
+        "Please sign in to edit your profile information.",
+        [
+          {
+            text: "Cancel",
+            style: "cancel",
+          },
+          {
+            text: "Sign In",
+            onPress: () => navigation.navigate("login"),
+          },
+        ]
+      );
+    } else {
+      navigation.navigate("EditUserProfile");
+    }
+  };
+
+  const handleRestrictedFeature = (featureName) => {
+    if (isGuest) {
+      Alert.alert(
+        "Sign In Required",
+        `Please sign in to access ${featureName}.`,
+        [
+          {
+            text: "Cancel",
+            style: "cancel",
+          },
+          {
+            text: "Sign In",
+            onPress: () => navigation.navigate("login"),
+          },
+        ]
+      );
     }
   };
 
@@ -61,38 +192,51 @@ export default function ProfileScreen({ navigation }) {
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
 
-      {/* Header with back button */}
-      <View style={styles.header}>
-        <View style={styles.headerRight} />
+      /* Header */
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="arrow-back" size={24} color="#333" />
+          </TouchableOpacity>
+          <Text style={styles.headerText}>Profile</Text>
+          <View style={styles.headerRight} />
+        </View>
 
-        {/* <Text style={styles.headerText}>Account Details</Text> */}
-
-        <View style={styles.headerRight} />
-      </View>
-
-      <ScrollView
-        style={styles.scrollContainer}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Profile Info Section */}
+        <ScrollView
+          style={styles.scrollContainer}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Profile Info Section */}
         <View style={styles.profileSection}>
           <View style={styles.profileImageContainer}>
             <Image
-              source={{ uri: 'https://img.freepik.com/premium-vector/art-illustration_890735-11.jpg?ga=GA1.1.2127828126.1743705572&semt=ais_hybrid&w=740' }}
+              source={{ uri: profileData.profileImage }}
               style={styles.profileImage}
               defaultSource={require("../assets/icon.png")}
             />
-            {/* <TouchableOpacity style={styles.editImageButton}>
-              <Feather name="edit-2" size={16} color="#fff" />
-            </TouchableOpacity> */}
+            {isGuest && (
+              <View style={styles.guestBadge}>
+                <Text style={styles.guestBadgeText}>Guest</Text>
+              </View>
+            )}
           </View>
 
-          <Text style={styles.profileName}>{user.displayName}</Text>
-          <Text style={styles.profileEmail}>{usernumber}</Text>
+          <Text style={styles.profileName}>{profileData.displayName}</Text>
+          <Text style={styles.profileEmail}>{profileData.email}</Text>
+          <Text style={styles.profilePhone}>+91-{phoneNumber}</Text>
 
-          {/* <TouchableOpacity style={styles.editProfileButton} onPress={() => navigation.navigate("EditUserProfile")}>
-            <Text style={styles.editProfileText}>Edit Profile</Text>
-          </TouchableOpacity> */}
+          {isGuest && (
+            <TouchableOpacity
+              style={styles.signInButton}
+              onPress={() => navigation.navigate("login")}
+            >
+              <Text style={styles.signInButtonText}>
+                Sign In for Full Access
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Account Section */}
@@ -100,88 +244,68 @@ export default function ProfileScreen({ navigation }) {
           <Text style={styles.sectionTitle}>Account</Text>
 
           <TouchableOpacity
-            style={styles.menuItem}
-            onPress={() => navigation.navigate("EditUserProfile")}
+            style={[styles.menuItem, isGuest && styles.disabledMenuItem]}
+            onPress={handleEditProfile}
           >
             <View style={styles.menuIconContainer}>
-              <Feather name="user" size={20} color="#333" />
-            </View>
-            <View style={styles.menuTextContainer}>
-              <Text style={styles.menuItemText}>Personal Information</Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={24} color="#ccc" />
-          </TouchableOpacity>
-        </View>
-
-        {/* Preferences Section */}
-        {/* <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Preferences</Text>
-          
-          <View style={styles.toggleItem}>
-            <View style={styles.menuIconContainer}>
-              <Ionicons name="notifications-outline" size={20} color="#333" />
-            </View>
-            <View style={styles.menuTextContainer}>
-              <Text style={styles.menuItemText}>Notifications</Text>
-            </View>
-            <Switch
-              trackColor={{ false: "#e0e0e0", true: "#2d6cdf" }}
-              thumbColor="#fff"
-              ios_backgroundColor="#e0e0e0"
-              onValueChange={toggleNotifications}
-              value={notificationsEnabled}
-            />
-          </View>
-          
-          <View style={styles.toggleItem}>
-            <View style={styles.menuIconContainer}>
-              <Ionicons name="moon-outline" size={20} color="#333" />
-            </View>
-            <View style={styles.menuTextContainer}>
-              <Text style={styles.menuItemText}>Dark Mode</Text>
-            </View>
-            <Switch
-              trackColor={{ false: "#e0e0e0", true: "#2d6cdf" }}
-              thumbColor="#fff"
-              ios_backgroundColor="#e0e0e0"
-              onValueChange={toggleDarkMode}
-              value={darkModeEnabled}
-            />
-          </View>
-          
-          <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate("Language")}>
-            <View style={styles.menuIconContainer}>
-              <Ionicons name="language-outline" size={20} color="#333" />
-            </View>
-            <View style={styles.menuTextContainer}>
-              <Text style={styles.menuItemText}>Language</Text>
-              <Text style={styles.menuItemSubtext}>English</Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={24} color="#ccc" />
-          </TouchableOpacity>
-        </View> */}
-
-        {/* Support Section */}
-        <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Support</Text>
-
-         
-
-          {/* <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate("Support")}>
-            <View style={styles.menuIconContainer}>
-              <MaterialIcons
-                name="chat-bubble-outline"
+              <Feather
+                name="user"
                 size={20}
-                color="#333"
+                color={isGuest ? "#ccc" : "#333"}
               />
             </View>
             <View style={styles.menuTextContainer}>
-              <Text style={styles.menuItemText}>Customer Support</Text>
+              <Text
+                style={[styles.menuItemText, isGuest && styles.disabledText]}
+              >
+                Edit Profile
+              </Text>
+              {isGuest && (
+                <Text style={styles.menuItemSubtext}>Sign in required</Text>
+              )}
             </View>
             <MaterialIcons name="chevron-right" size={24} color="#ccc" />
-          </TouchableOpacity> */}
+          </TouchableOpacity>
 
-          <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate("Developer")}>
+          {/* <TouchableOpacity
+            style={[styles.menuItem, isGuest && styles.disabledMenuItem]}
+            onPress={handleEditProfile}
+          >
+            <View style={styles.menuIconContainer}>
+              <Feather
+                name="user"
+                size={20}
+                color={isGuest ? "#ccc" : "#333"}
+              />
+            </View>
+            <View style={styles.menuTextContainer}>
+              <Text
+                style={[styles.menuItemText, isGuest && styles.disabledText]}
+              >
+                Phone Visibility
+              </Text>
+              {isGuest && (
+                <Text style={styles.menuItemSubtext}>Sign in required</Text>
+              )}
+            </View>
+            {!isGuest && (
+              <Switch
+                value={phoneVisible}
+                onValueChange={togglePhoneVisibility}
+                thumbColor={phoneVisible ? "#2d6cdf" : "#ccc"}
+              />
+            )}
+          </TouchableOpacity> */}
+        </View>
+
+        {/* Support Section */}
+        {/* <View style={styles.sectionContainer}>
+          <Text style={styles.sectionTitle}>Support</Text>
+
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => navigation.navigate("Developer")}
+          >
             <View style={styles.menuIconContainer}>
               <FontAwesome5 name="user-alt" size={20} color="#333" />
             </View>
@@ -197,29 +321,32 @@ export default function ProfileScreen({ navigation }) {
             </View>
             <View style={styles.menuTextContainer}>
               <Text style={styles.menuItemText}>About</Text>
-              <Text style={styles.menuItemSubtext}>Version 1.0.0</Text>
-            </View>
+              {/* <Text style={styles.menuItemSubtext}>Version {appVersion}</Text> */}
+            {/* </View>
             <MaterialIcons name="chevron-right" size={24} color="#ccc" />
           </TouchableOpacity>
-        </View>
+        </View>  */}
 
+        {/* Logout/Sign In Section */}
         <View style={styles.logoutsectio}>
-          <TouchableOpacity
-            style={styles.menuItem}
-            onPress={() => {
-              handleLogout;
-            }}
-          >
+          <TouchableOpacity style={styles.menuItem} onPress={handleLogout}>
             <View style={styles.menuIconContainer}>
-              <Feather name="log-out" size={20} color="#ff3b30" />
+              <Feather
+                name={isGuest ? "log-in" : "log-out"}
+                size={20}
+                color={isGuest ? "#2d6cdf" : "#ff3b30"}
+              />
             </View>
             <View style={styles.menuTextContainer}>
-              <Text style={styles.logoutText}>Log Out</Text>
+              <Text
+                style={[styles.logoutText, isGuest && { color: "#2d6cdf" }]}
+              >
+                {isGuest ? "Sign In" : "Log Out"}
+              </Text>
             </View>
             <MaterialIcons name="chevron-right" size={24} color="#ccc" />
           </TouchableOpacity>
         </View>
-        {/* Logout Button */}
 
         {/* Bottom Spacing */}
         <View style={styles.bottomSpacing} />
@@ -277,6 +404,22 @@ const styles = StyleSheet.create({
     borderRadius: 50,
     backgroundColor: "#f0f0f0",
   },
+  guestBadge: {
+    position: "absolute",
+    bottom: -5,
+    right: -5,
+    backgroundColor: "#ff9500",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: "#fff",
+  },
+  guestBadgeText: {
+    fontSize: 10,
+    fontFamily: "Bold",
+    color: "#fff",
+  },
   editImageButton: {
     position: "absolute",
     bottom: 0,
@@ -300,7 +443,24 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: "Regular",
     color: "#777",
+    marginBottom:8,
+  },
+  profilePhone: {
+    fontSize: 16,
+    fontFamily: "Regular",
+    color: "#777",
     marginBottom: 20,
+  },
+  signInButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 25,
+    backgroundColor: "#2d6cdf",
+  },
+  signInButtonText: {
+    fontSize: 16,
+    fontFamily: "Medium",
+    color: "#fff",
   },
   editProfileButton: {
     paddingVertical: 10,
@@ -326,7 +486,6 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
     borderBottomWidth: 8,
     borderBottomColor: "#fff",
-
   },
   sectionTitle: {
     fontSize: 18,
@@ -340,6 +499,9 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: "#f0f0f0",
+  },
+  disabledMenuItem: {
+    opacity: 0.6,
   },
   toggleItem: {
     flexDirection: "row",
@@ -364,6 +526,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: "Regular",
     color: "#333",
+  },
+  disabledText: {
+    color: "#ccc",
   },
   menuItemSubtext: {
     fontSize: 14,

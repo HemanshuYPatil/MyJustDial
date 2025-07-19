@@ -8,16 +8,11 @@ import {
   ScrollView,
   Image,
   Dimensions,
-  Platform,
   TextInput,
+  Platform,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
-import {
-  Ionicons,
-  MaterialIcons,
-  FontAwesome5,
-  Feather,
-} from "@expo/vector-icons";
+import { Ionicons, Feather, MaterialIcons } from "@expo/vector-icons";
 import { useFonts } from "expo-font";
 import {
   collection,
@@ -36,7 +31,6 @@ export default function ChatListScreen({ navigation }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [chats, setChats] = useState([]);
   const [filteredChats, setFilteredChats] = useState([]);
-  const [activeFilter, setActiveFilter] = useState("all");
   const [userData, setUserData] = useState({});
   const user = auth.currentUser;
 
@@ -46,10 +40,8 @@ export default function ChatListScreen({ navigation }) {
     Bold: require("../../../assets/fonts/bold.ttf"),
   });
 
-  // Fetch user profiles for the participants
   const fetchUserData = async (userId) => {
     if (userData[userId]) return userData[userId];
-
     try {
       const userDoc = await getDoc(doc(db, "users", userId));
       if (userDoc.exists()) {
@@ -67,10 +59,8 @@ export default function ChatListScreen({ navigation }) {
     }
   };
 
-  // Fetch chats from Firestore
   useEffect(() => {
     if (!user) return;
-
     const userId = user.uid;
     const chatsRef = collection(db, "chats");
     const q = query(
@@ -85,20 +75,18 @@ export default function ChatListScreen({ navigation }) {
       for (const docSnapshot of snapshot.docs) {
         const chatData = docSnapshot.data();
 
-        // Find the other participant (not the current user)
         const otherParticipantId = chatData.participants.find(
           (participantId) => participantId !== userId
         );
 
-        // Fetch other user's profile data
         const otherUserData = await fetchUserData(otherParticipantId);
-
-        // Get unread count for current user
         const unreadCount = chatData.unreadCount?.[userId] || 0;
+        const role = chatData.customerId === userId ? "customer" : "provider";
 
         chatsList.push({
           id: docSnapshot.id,
-          name: otherUserData?.name || "Unknown User",
+          name:
+            otherUserData?.name || otherUserData?.displayName || "Unknown User",
           lastMessage: chatData.lastMessage?.text || "",
           timestamp: chatData.lastMessage?.timestamp?.toDate() || new Date(),
           unread: unreadCount,
@@ -107,6 +95,7 @@ export default function ChatListScreen({ navigation }) {
           type: chatData.tripId ? "trip" : "support",
           otherUserId: otherParticipantId,
           tripId: chatData.tripId || null,
+          role,
         });
       }
 
@@ -117,7 +106,6 @@ export default function ChatListScreen({ navigation }) {
     return () => unsubscribe();
   }, [user]);
 
-  // Filter chats based on search query
   useEffect(() => {
     if (!searchQuery) {
       setFilteredChats(chats);
@@ -133,61 +121,74 @@ export default function ChatListScreen({ navigation }) {
     setFilteredChats(filtered);
   }, [searchQuery, chats]);
 
-  if (!fontsLoaded) {
-    return null;
-  }
+  if (!fontsLoaded) return null;
 
   const renderAvatar = (chat) => {
-    if (chat.avatar) {
-      return <Image source={{ uri: chat.avatar }} style={styles.avatar} />;
-    } else {
-      // Default icon for chats without avatar
-      return (
-        <Image
-          source={{
-            uri: "https://img.freepik.com/premium-vector/men-icon-trendy-avatar-character-cheerful-happy-people-flat-vector-illustration-round-frame-male-portraits-group-team-adorable-guys-isolated-white-background_275421-286.jpg",
-          }}
-          style={[styles.avatar, styles.defaultAvatar]}
-          resizeMode="cover"
-        />
-      );
-    }
+    return (
+      <Image
+        source={{
+          uri:
+            chat.avatar ||
+            "https://img.freepik.com/premium-vector/men-icon-trendy-avatar-character-cheerful-happy-people-flat-vector-illustration-round-frame-male-portraits-group-team-adorable-guys-isolated-white-background_275421-286.jpg",
+        }}
+        style={styles.avatar}
+        resizeMode="cover"
+      />
+    );
   };
 
-  const getRelativeTime = (timestamp) => {
-    if (!(timestamp instanceof Date)) {
-      return "";
-    }
+const renderCallIndicator = (role) => {
+  if (role === "customer") {
+    // Incoming indicator (customer receives service request)
+    return (
+      <View style={styles.callIndicatorContainer}>
+        <MaterialIcons 
+          name="call-made" 
+          size={16} 
+          color="#FF6B35" 
+          style={styles.callIcon}
+        />
+        <Text style={[styles.roleText, { color: "#FF6B35" }]}>Outgoing</Text>
+      </View>
+    );
+  } else {
+    // Outgoing indicator (provider initiates service)
+    return (
+      <View style={styles.callIndicatorContainer}>
+        <MaterialIcons 
+          name="call-received" 
+          size={16} 
+          color="#4CAF50" 
+          style={styles.callIcon}
+        />
+        <Text style={[styles.roleText, { color: "#4CAF50" }]}>Incoming</Text>
+      </View>
+    );
+  }
+};
 
+
+  const getRelativeTime = (timestamp) => {
+    if (!(timestamp instanceof Date)) return "";
     const now = new Date();
     const diffMs = now - timestamp;
     const diffMins = Math.floor(diffMs / (1000 * 60));
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-    if (diffMins < 1) {
-      return "Just now";
-    } else if (diffMins < 60) {
-      return `${diffMins}m ago`;
-    } else if (diffHours < 24) {
-      return `${diffHours}h ago`;
-    } else if (diffDays < 7) {
-      return `${diffDays}d ago`;
-    } else {
-      return timestamp.toLocaleDateString();
-    }
+    if (diffMins < 1) return "Just now";
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return timestamp.toLocaleDateString();
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" hidden={false} />
-
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headertext}>Messages</Text>
       </View>
 
-      {/* Search Bar */}
       <View style={styles.searchBarContainer}>
         <View style={styles.searchBar}>
           <View style={styles.searchInput}>
@@ -208,7 +209,6 @@ export default function ChatListScreen({ navigation }) {
         </View>
       </View>
 
-      {/* Chat List */}
       <ScrollView
         style={styles.chatListContainer}
         showsVerticalScrollIndicator={false}
@@ -227,20 +227,21 @@ export default function ChatListScreen({ navigation }) {
                 });
               }}
             >
-              <View style={styles.avatarContainer}>
-                {renderAvatar(chat)}
-                {chat.isActive && <View style={styles.activeIndicator} />}
-              </View>
+              <View style={styles.avatarContainer}>{renderAvatar(chat)}</View>
 
               <View style={styles.chatDetails}>
                 <View style={styles.chatHeader}>
-                  <Text style={styles.chatName}>{chat.name}</Text>
+                  <View style={styles.nameAndIndicator}>
+                    <Text style={styles.chatName}>{chat.name}</Text>
+                    {renderCallIndicator(chat.role)}
+                  </View>
+
                   <Text style={styles.timestamp}>
                     {getRelativeTime(chat.timestamp)}
                   </Text>
                 </View>
 
-                <View style={styles.chatFooter}>
+                {/* <View style={styles.chatFooter}>
                   <Text
                     style={[
                       styles.lastMessage,
@@ -256,7 +257,7 @@ export default function ChatListScreen({ navigation }) {
                       <Text style={styles.unreadCount}>{chat.unread}</Text>
                     </View>
                   )}
-                </View>
+                </View> */}
               </View>
             </TouchableOpacity>
           ))
@@ -271,8 +272,6 @@ export default function ChatListScreen({ navigation }) {
             </Text>
           </View>
         )}
-
-        {/* Add some spacing at the bottom */}
         <View style={styles.bottomSpacing} />
       </ScrollView>
     </SafeAreaView>
@@ -381,10 +380,33 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 6,
   },
+  nameAndIndicator: {
+    flex: 1,
+    flexDirection: "column",
+    alignItems: "flex-start",
+  },
   chatName: {
     fontSize: 16,
     fontFamily: "Bold",
     color: "#000",
+    marginBottom: 2,
+  },
+  callIndicatorContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.05)",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+  },
+  callIcon: {
+    marginRight: 4,
+  },
+  roleText: {
+    fontSize: 11,
+    fontFamily: "Medium",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   timestamp: {
     fontSize: 12,

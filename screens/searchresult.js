@@ -11,7 +11,6 @@ import {
   Animated,
   Dimensions,
   Alert,
-  Platform,
   Image,
 } from "react-native";
 import {
@@ -21,25 +20,39 @@ import {
   FontAwesome5,
   Feather,
 } from "@expo/vector-icons";
-import { auth, geofirestore, firebase } from "../lib/db/firebase";
+import { auth, geofirestore, GeoPoint } from "../lib/db/firebase";
 import { getusername } from "../lib/query/user";
 import { BlurView } from "expo-blur";
 import { useFonts } from "expo-font";
 
 const { width, height } = Dimensions.get("window");
-const CARD_WIDTH = width - 40;
+const CARD_WIDTH = width - 20;
 
 export default function RiderSearchResultsScreen({ route, navigation }) {
-  const { pickup, destination, pickupCoordinates, destinationCoordinates } =
-    route.params;
+  const {
+    pickup,
+    destination,
+    pickupCoordinates,
+    destinationCoordinates,
+    isGuest = false,
+    searchResults = [],
+    searchByCity = false,
+    startCity,
+    endCity,
+    date,
+  } = route.params;
 
   const [isLoading, setIsLoading] = useState(true);
   const [nearbyUsers, setNearbyUsers] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
-  const [sortOption, setSortOption] = useState("distance"); // distance, rating, time
+  const [sortOption, setSortOption] = useState("distance");
   const [filterVisible, setFilterVisible] = useState(false);
+  const [userType, setUserType] = useState(isGuest ? "guest" : "authenticated");
+  const [citySearchResults, setCitySearchResults] = useState(
+    searchResults || []
+  );
+  const [searchError, setSearchError] = useState(null);
 
-  // Animation values
   const scrollY = new Animated.Value(0);
   const headerOpacity = scrollY.interpolate({
     inputRange: [0, 60],
@@ -47,45 +60,201 @@ export default function RiderSearchResultsScreen({ route, navigation }) {
     extrapolate: "clamp",
   });
 
-  // Card animation
   const fadeAnim = useState(new Animated.Value(0))[0];
   const slideAnim = useState(new Animated.Value(30))[0];
 
-  // Load custom fonts
   const [fontsLoaded] = useFonts({
     Regular: require("../assets/fonts/regular.ttf"),
     Medium: require("../assets/fonts/medium.ttf"),
     Bold: require("../assets/fonts/bold.ttf"),
   });
 
-  // Initial setup
   useEffect(() => {
-    fetchNearbyUsers();
+    checkAuthStatus();
+
+    if (searchByCity) {
+      handleCitySearchResults();
+    } else {
+      if (
+        !pickupCoordinates ||
+        !destinationCoordinates ||
+        !pickupCoordinates.latitude ||
+        !pickupCoordinates.longitude ||
+        !destinationCoordinates.latitude ||
+        !destinationCoordinates.longitude
+      ) {
+        setSearchError("Invalid location coordinates");
+        setIsLoading(false);
+        return;
+      }
+      fetchNearbyUsers();
+    }
   }, []);
 
-  // Effect for sorting when option changes
+  const getUserDisplayName = async (tripData) => {
+    try {
+      const username = await getusername(tripData.userId);
+      if (username) return username;
+    } catch (error) {
+      console.log("Failed to fetch username by ID:", error);
+    }
+
+    if (tripData.driverName) return tripData.driverName;
+    if (tripData.username) return tripData.username;
+    if (tripData.userDisplayName) return tripData.userDisplayName;
+    if (tripData.createdBy) return tripData.createdBy;
+
+    if (tripData.userId) {
+      return `User ${tripData.userId.substring(0, 4)}`;
+    }
+
+    return "Anonymous";
+  };
+
+  const getAvatarText = (username) => {
+    if (!username || username === "Anonymous") return "?";
+    return username.charAt(0).toUpperCase();
+  };
+
+  const getSyncUserDisplayName = (tripData) => {
+    if (tripData.driverName) return tripData.driverName;
+    if (tripData.username) return tripData.username;
+    if (tripData.userDisplayName) return tripData.userDisplayName;
+    if (tripData.createdBy) return tripData.createdBy;
+    if (tripData.userId) return `${getusername(tripData.userId)}`;
+    return "Anonymous";
+  };
+
+  const handleCitySearchResults = async () => {
+    setIsLoading(true);
+    setSearchError(null);
+
+    try {
+      if (citySearchResults.length === 0) {
+        setNearbyUsers([]);
+        setIsLoading(false);
+        return;
+      }
+
+      const usersData = [];
+      const processedUserIds = new Set();
+      const userPromises = [];
+
+      for (const tripData of citySearchResults) {
+        if (
+          userType === "authenticated" &&
+          auth.currentUser &&
+          tripData.userId === auth.currentUser.uid
+        ) {
+          continue;
+        }
+
+        if (processedUserIds.has(tripData.userId)) continue;
+        if (tripData.status !== "active") continue;
+
+        processedUserIds.add(tripData.userId);
+
+        const userData = {
+          id: tripData.userId,
+          tripId: tripData.id,
+          startLocation:
+            tripData.startlocationName?.split(",")[0] || "Location",
+          endLocation: tripData.endlocationName?.split(",")[0] || "Destination",
+          startCoords: tripData.startLocation,
+          endCoords: tripData.endLocation,
+          timestamp: tripData.timestamp || Date.now(),
+          distance: 0,
+          rating: (Math.random() * 2 + 3).toFixed(1),
+          rides: Math.floor(Math.random() * 50) + 1,
+          avatarColor: getRandomColor(),
+          verified: Math.random() > 0.3,
+          createdAt: tripData.createdAt,
+          departure: tripData.departureTime,
+          fallbackUsername: getSyncUserDisplayName(tripData),
+        };
+
+        usersData.push(userData);
+
+        userPromises.push(
+          getusername(tripData.userId)
+            .then((name) => {
+              userData.username = name || userData.fallbackUsername;
+              return userData;
+            })
+            .catch((err) => {
+              console.error("Error fetching username:", err);
+              userData.username = userData.fallbackUsername;
+              return userData;
+            })
+        );
+      }
+
+      await Promise.all(userPromises);
+
+      usersData.sort((a, b) => {
+        if (sortOption === "time") {
+          return new Date(b.departure) - new Date(a.departure);
+        } else if (sortOption === "rating") {
+          return parseFloat(b.rating) - parseFloat(a.rating);
+        }
+        return 0;
+      });
+
+      setNearbyUsers(usersData);
+
+      if (usersData.length > 0) {
+        setSelectedUser(usersData[0]);
+      }
+    } catch (error) {
+      console.error("Error processing city search results:", error);
+      setSearchError("Failed to process search results");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const checkAuthStatus = () => {
+    if (isGuest || !auth.currentUser) {
+      setUserType("guest");
+    } else {
+      setUserType("authenticated");
+    }
+  };
+
   useEffect(() => {
     if (nearbyUsers.length > 0) {
       let sortedUsers = [...nearbyUsers];
 
-      if (sortOption === "distance") {
-        sortedUsers.sort((a, b) => a.distance - b.distance);
-      } else if (sortOption === "rating") {
-        sortedUsers.sort((a, b) => parseFloat(b.rating) - parseFloat(a.rating));
-      } else if (sortOption === "time") {
-        sortedUsers.sort((a, b) => b.timestamp - a.timestamp);
+      if (searchByCity) {
+        if (sortOption === "rating") {
+          sortedUsers.sort(
+            (a, b) => parseFloat(b.rating) - parseFloat(a.rating)
+          );
+        } else if (sortOption === "time") {
+          sortedUsers.sort(
+            (a, b) => new Date(b.departure) - new Date(a.departure)
+          );
+        }
+      } else {
+        if (sortOption === "distance") {
+          sortedUsers.sort((a, b) => a.distance - b.distance);
+        } else if (sortOption === "rating") {
+          sortedUsers.sort(
+            (a, b) => parseFloat(b.rating) - parseFloat(a.rating)
+          );
+        } else if (sortOption === "time") {
+          sortedUsers.sort((a, b) => b.timestamp - a.timestamp);
+        }
       }
 
       setNearbyUsers(sortedUsers);
     }
   }, [sortOption]);
 
-  // Effect to select first user when nearby users change
   useEffect(() => {
     if (nearbyUsers.length > 0 && !selectedUser) {
       setSelectedUser(nearbyUsers[0]);
 
-      // Animate cards appearance
       Animated.parallel([
         Animated.timing(fadeAnim, {
           toValue: 1,
@@ -101,27 +270,30 @@ export default function RiderSearchResultsScreen({ route, navigation }) {
     }
   }, [nearbyUsers]);
 
-  // Fetch nearby users
   const fetchNearbyUsers = async () => {
     setIsLoading(true);
+    setSearchError(null);
 
     try {
-      // Get reference point (pickup location)
-      const center = new firebase.firestore.GeoPoint(
+      const center = new GeoPoint(
         pickupCoordinates.latitude,
         pickupCoordinates.longitude
       );
 
-      // Query trips within 3km of pickup point
       const geoCollection = geofirestore.collection("trips");
       const query = geoCollection.near({
         center,
-        radius: 3, // 3km radius
+        radius: 300000000,
       });
 
       const snapshot = await query.get();
 
-      // Process results
+      if (snapshot.empty) {
+        setNearbyUsers([]);
+        setIsLoading(false);
+        return;
+      }
+
       const usersData = [];
       const processedUserIds = new Set();
       const userPromises = [];
@@ -129,27 +301,29 @@ export default function RiderSearchResultsScreen({ route, navigation }) {
       snapshot.forEach((doc) => {
         const tripData = doc.data();
 
-        // Skip user's own trips
-        if (tripData.userId === auth.currentUser.uid) return;
+        // if (
+        //   userType === "authenticated" &&
+        //   auth.currentUser
+        //   // tripData.userId === auth.currentUser.uid
+        // ) {
+        //   return;
+        // }
 
-        // Check if user has already been processed
         if (processedUserIds.has(tripData.userId)) return;
-
         if (tripData.status !== "active") return;
-        // Check if routes are similar
+
         const tripDestination = tripData.endLocation;
         const isSimilarDestination = isLocationNearby(
           destinationCoordinates.latitude,
           destinationCoordinates.longitude,
           tripDestination.latitude,
           tripDestination.longitude,
-          2 // 2km threshold for similar destination
+          2
         );
 
         if (isSimilarDestination) {
           processedUserIds.add(tripData.userId);
 
-          // Add to user data
           const userData = {
             id: tripData.userId,
             tripId: doc.id,
@@ -166,38 +340,35 @@ export default function RiderSearchResultsScreen({ route, navigation }) {
               tripData.startLocation.latitude,
               tripData.startLocation.longitude
             ),
-            rating: (Math.random() * 2 + 3).toFixed(1), // Mock rating between 3.0-5.0
-            rides: Math.floor(Math.random() * 50) + 1, // Mock number of rides
+            rating: (Math.random() * 2 + 3).toFixed(1),
+            tripType: tripData.tripType,
+            rides: Math.floor(Math.random() * 50) + 1,
             avatarColor: getRandomColor(),
-            verified: Math.random() > 0.3, // Random verification status for UI enhancement
+            verified: Math.random() > 0.3,
             createdAt: tripData.createdAt,
             departure: tripData.departureTime,
+            fallbackUsername: getSyncUserDisplayName(tripData),
           };
 
           usersData.push(userData);
 
-          // Add promise to fetch username
           userPromises.push(
             getusername(tripData.userId)
               .then((name) => {
-                userData.username = name || "User";
+                userData.username = name || userData.fallbackUsername;
                 return userData;
               })
               .catch((err) => {
                 console.error("Error fetching username:", err);
-                userData.username = "User";
+                userData.username = userData.fallbackUsername;
                 return userData;
               })
           );
         }
       });
 
-      // Wait for all username fetches to complete
       await Promise.all(userPromises);
-
-      // Sort by distance
       usersData.sort((a, b) => a.distance - b.distance);
-
       setNearbyUsers(usersData);
 
       if (usersData.length > 0) {
@@ -205,13 +376,35 @@ export default function RiderSearchResultsScreen({ route, navigation }) {
       }
     } catch (error) {
       console.error("Error fetching nearby users:", error);
-      Alert.alert("Error", "Failed to fetch nearby users. Please try again.");
+      setSearchError("Failed to fetch nearby users");
     } finally {
       setIsLoading(false);
     }
   };
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setIsLoading(true);
+        setSearchError(null);
 
-  // Generate random pastel color for avatars
+        if (searchByCity) {
+          await handleCitySearchResults();
+        } else {
+          if (!pickupCoordinates || !destinationCoordinates) {
+            throw new Error("Invalid location coordinates");
+          }
+          await fetchNearbyUsers();
+        }
+      } catch (error) {
+        console.error("Data loading error:", error);
+        setSearchError(error.message);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadData();
+  }, [pickupCoordinates, destinationCoordinates, searchByCity]);
   const getRandomColor = () => {
     const colors = [
       "#4D7EFF",
@@ -226,15 +419,13 @@ export default function RiderSearchResultsScreen({ route, navigation }) {
     return colors[Math.floor(Math.random() * colors.length)];
   };
 
-  // Check if two locations are nearby (within threshold km)
   const isLocationNearby = (lat1, lon1, lat2, lon2, threshold) => {
     const distance = calculateDistance(lat1, lon1, lat2, lon2);
     return distance <= threshold;
   };
 
-  // Calculate distance between two coordinates in kilometers
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
-    const R = 6371; // Radius of the earth in km
+    const R = 6371;
     const dLat = deg2rad(lat2 - lat1);
     const dLon = deg2rad(lon2 - lon1);
     const a =
@@ -244,7 +435,7 @@ export default function RiderSearchResultsScreen({ route, navigation }) {
         Math.sin(dLon / 2) *
         Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    const distance = R * c; // Distance in km
+    const distance = R * c;
     return distance;
   };
 
@@ -252,7 +443,6 @@ export default function RiderSearchResultsScreen({ route, navigation }) {
     return deg * (Math.PI / 180);
   };
 
-  // Format date from timestamp
   const formatDate = (dateString) => {
     const date = new Date(dateString);
     return date.toLocaleString("en-US", {
@@ -264,52 +454,64 @@ export default function RiderSearchResultsScreen({ route, navigation }) {
     });
   };
 
+  const formatDepartureDate = (dateString) => {
+    if (!dateString) return "Not specified";
 
-  // Add these functions to your component or utils file
-const formatDepartureDate = (dateString) => {
-  if (!dateString) return 'Not specified';
-  
-  const date = new Date(dateString);
-  if (isNaN(date.getTime())) return 'Invalid date';
-  
-  // Format as "Mon, Apr 28, 2025"
-  return date.toLocaleDateString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric'
-  });
-};
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return "Invalid date";
 
-const formatDepartureTime = (timeString) => {
-  if (!timeString) return 'Not specified';
-  
-  // If timeString is a Date object or ISO string
-  if (timeString instanceof Date || (typeof timeString === 'string' && !timeString.match(/^\d{1,2}:\d{2}$/))) {
-    const date = new Date(timeString);
-    if (isNaN(date.getTime())) return 'Invalid time';
-    
-    // Format as "10:30 AM"
-    return date.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
+    return date.toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      year: "numeric",
     });
-  }
-  
-  // If timeString is already formatted as "HH:MM"
-  return timeString;
-};
-
-  // Handle user selection
-  const handleUserSelect = (user) => {
-    setSelectedUser(user);
-    console.log(user);
   };
 
-  // Handle contact user
+  const formatDepartureTime = (timeString) => {
+    if (!timeString) return "Not specified";
+
+    if (
+      timeString instanceof Date ||
+      (typeof timeString === "string" && !timeString.match(/^\d{1,2}:\d{2}$/))
+    ) {
+      const date = new Date(timeString);
+      if (isNaN(date.getTime())) return "Invalid time";
+
+      return date.toLocaleTimeString("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      });
+    }
+
+    return timeString;
+  };
+
+  const handleUserSelect = (user) => {
+    setSelectedUser(user);
+  };
+
   const handleContactUser = (user) => {
     if (!user) return;
+
+    if (userType === "guest") {
+      Alert.alert(
+        "Sign In Required",
+        "Please sign in to contact riders and book trips.",
+        [
+          {
+            text: "Cancel",
+            style: "cancel",
+          },
+          {
+            text: "Sign In",
+            onPress: () => navigation.navigate("Login"),
+          },
+        ]
+      );
+      return;
+    }
 
     navigation.navigate("TripUserDetails", {
       userId: user.id,
@@ -320,17 +522,25 @@ const formatDepartureTime = (timeString) => {
     });
   };
 
-  // Set sort option
+  const getHeaderTitle = () => {
+    if (searchByCity) {
+      return userType === "guest" ? "Browse City Trips" : "City Trips";
+    }
+    return userType === "guest" ? "Browse Rides" : "Results";
+  };
+
+  const getHeaderRouteText = () => {
+    if (searchByCity) {
+      return `${startCity} → ${endCity}`;
+    }
+    return `${pickup.split(",")[0]} → ${destination.split(",")[0]}`;
+  };
+
   const handleSort = (option) => {
     setSortOption(option);
     setFilterVisible(false);
   };
 
-  if (!fontsLoaded) {
-    return null;
-  }
-
-  // Render user item in the list
   const renderUserItem = ({ item }) => {
     const isSelected = selectedUser && selectedUser.id === item.id;
     return (
@@ -339,11 +549,12 @@ const formatDepartureTime = (timeString) => {
         isSelected={isSelected}
         onSelect={handleUserSelect}
         onContact={handleContactUser}
+        userType={userType}
       />
     );
   };
 
-  const UserCard = ({ item, isSelected, onSelect, onContact }) => {
+  const UserCard = ({ item, isSelected, onSelect, onContact, userType }) => {
     const fadeAnim = useRef(new Animated.Value(0)).current;
     const slideAnim = useRef(new Animated.Value(20)).current;
 
@@ -370,137 +581,105 @@ const formatDepartureTime = (timeString) => {
         }}
       >
         <TouchableOpacity
-          style={[styles.card, isSelected && styles.cardSelected]}
+          style={[styles.rideHistoryCard, isSelected && styles.cardSelected]}
           onPress={() => onSelect(item)}
           activeOpacity={0.95}
         >
-          {/* Card content — same as before */}
-          {/* Header */}
-          <View style={styles.cardHeader}>
-            <View style={styles.avatarSection}>
+          {userType === "guest" && (
+            <View style={styles.guestBanner}>
+              <Ionicons
+                name="information-circle-outline"
+                size={16}
+                color="#FF6B35"
+              />
+              <Text style={styles.guestBannerText}>
+                Sign in to book this ride
+              </Text>
+            </View>
+          )}
+
+          <View style={styles.rideHeader}>
+            <View style={styles.rideTimeSection}>
+              <Text style={styles.rideDate}>
+                {formatDepartureDate(item.departure)}
+              </Text>
+              <Text style={styles.rideTime}>
+                {formatDepartureTime(item.departure)}
+              </Text>
+            </View>
+
+            <View style={styles.tripTypeBadge}>
+              <Text style={styles.tripTypeBadgeText}>{item.tripType}</Text>
+            </View>
+          </View>
+
+          <View style={styles.rideTypeSection}>
+            <Text style={styles.rideType}>Shared Ride to</Text>
+          </View>
+
+          <View style={styles.rideLocationSection}>
+            <View style={styles.locationTextContainer}>
+              <Text style={styles.startLocation} numberOfLines={1}>
+                {item.startLocation}
+              </Text>
+              <Text style={styles.endLocation} numberOfLines={2}>
+                {item.endLocation}
+              </Text>
+            </View>
+
+            <View style={styles.driverSection}>
               {item.userId ? (
                 <Image
                   source={{
                     uri: "https://img.freepik.com/premium-vector/men-icon-trendy-avatar-character-cheerful-happy-people-flat-vector-illustration-round-frame-male-portraits-group-team-adorable-guys-isolated-white-background_275421-286.jpg",
                   }}
-                  style={styles.avatar}
+                  style={styles.driverAvatar}
                   resizeMode="cover"
                 />
               ) : (
                 <View
                   style={[
-                    styles.avatar,
+                    styles.driverAvatar,
                     { backgroundColor: item.avatarColor || "#ccc" },
                   ]}
                 >
-                  <Text style={styles.avatarText}>
-                    {item.username?.charAt(0) || "U"}
+                  <Text style={styles.driverAvatarText}>
+                    {getAvatarText(item.username)}
                   </Text>
                 </View>
               )}
-              {item.verified && (
-                <View style={styles.verifiedBadge}>
-                  <MaterialIcons name="verified" size={18} color="#4D7EFF" />
-                </View>
-              )}
-            </View>
-
-            <View style={styles.userInfo}>
-              <View style={styles.usernameLine}>
-                <Text style={styles.userName}>{item.username}</Text>
-                <View style={styles.ratingContainer}>
-                  <Ionicons name="star" size={14} color="#FFD700" />
-                  <Text style={styles.ratingText}>{item.rating || "N/A"}</Text>
-                </View>
-              </View>
-
-              <View style={styles.rideInfoLine}>
-                <View style={styles.badgeContainer}>
-                  <Text style={styles.rideCount}>{item.rides} rides</Text>
-                </View>
-                <Text style={styles.rideDate}>
-                  {console.log(item.createdAt)}
-                  {formatDate(item.createdAt)}
-                </Text>
-              </View>
             </View>
           </View>
 
-          {/* Route Info */}
-          <View style={styles.routeInfoContainer}>
-            <View style={styles.routeIcon}>
-              <View style={styles.originDot} />
-              <View style={styles.routeLine} />
-              <View style={styles.destinationDot} />
+          {/* Status badge if cancelled */}
+          {item.status === "cancelled" && (
+            <View style={styles.statusBadge}>
+              <Text style={styles.statusText}>CANCELLED</Text>
             </View>
+          )}
 
-            <View style={styles.routeDetails}>
-              <View style={styles.locationRow}>
-                <Text style={styles.locationText} numberOfLines={1}>
-                  {item.startLocation}
-                </Text>
-                <View style={styles.locationChip}>
-                  <Text style={styles.locationChipText}>PICK-UP</Text>
-                </View>
-              </View>
-
-              <View style={styles.divider} />
-
-              <View style={styles.locationRow}>
-                <Text style={styles.locationText} numberOfLines={1}>
-                  {item.endLocation}
-                </Text>
-                <View style={styles.locationChip}>
-                  <Text style={styles.locationChipText}>DROP-OFF</Text>
-                </View>
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.routeInfoContainer}>
-            <View style={styles.departureIconContainer}>
-              <Ionicons name="time-outline" size={20} color="#555" />
-            </View>
-            <View style={styles.departureDetails}>
-              <View style={styles.departureRow}>
-                <Text style={styles.departureLabel}>Departure Date:</Text>
-                <Text style={styles.departureValue}>
-                  {formatDepartureDate(item.departure)}
-                </Text>
-              </View>
-              <View style={styles.departureRow}>
-                <Text style={styles.departureLabel}>Departure Time:</Text>
-                <Text style={styles.departureValue}>
-                  {formatDepartureTime(item.departure)}
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Footer */}
-          <View style={styles.cardFooter}>
-            <View style={styles.distanceContainer}>
-              <Ionicons name="location-outline" size={16} color="#555" />
-              <Text style={styles.distanceText}>
-                {item.distance?.toFixed(1)} km away
-              </Text>
-            </View>
-
-            <TouchableOpacity
-              style={styles.contactButton}
-              onPress={() => onContact(item)}
-              activeOpacity={0.8}
+          <TouchableOpacity
+            style={[
+              styles.bookButton,
+              userType === "guest" && styles.bookButtonGuest,
+            ]}
+            onPress={() => onContact(item)}
+            activeOpacity={0.8}
+          >
+            <Text
+              style={[
+                styles.bookButtonText,
+                userType === "guest" && styles.bookButtonTextGuest,
+              ]}
             >
-              <Text style={styles.contactButtonText}>Book Now</Text>
-              <Ionicons name="chevron-forward" size={16} color="#FFF" />
-            </TouchableOpacity>
-          </View>
+              {userType === "guest" ? "Sign In to Book" : "Book Now"}
+            </Text>
+          </TouchableOpacity>
         </TouchableOpacity>
       </Animated.View>
     );
   };
 
-  // Render filter options menu
   const renderFilterMenu = () => {
     if (!filterVisible) return null;
 
@@ -575,72 +754,14 @@ const formatDepartureTime = (timeString) => {
     );
   };
 
-  const Header = ({ navigation, pickup, destination, headerOpacity }) => {
-    return (
-      <Animated.View style={[styles.header, { opacity: headerOpacity }]}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="arrow-back" size={22} color="#000" />
-        </TouchableOpacity>
+  if (!fontsLoaded) {
+    return null;
+  }
 
-        <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerTitle}>Nearby Riders</Text>
-          <View style={styles.headerRouteContainer}>
-            <Text style={styles.headerRouteText} numberOfLines={1}>
-              {pickup.split(",")[0]} → {destination.split(",")[0]}
-            </Text>
-          </View>
-          {!isLoading && (
-            <Text style={styles.headerCount}>
-              {nearbyUsers.length}{" "}
-              {nearbyUsers.length === 1 ? "person" : "people"} found
-            </Text>
-          )}
-        </View>
-
-        <TouchableOpacity
-          style={styles.filterButton}
-          onPress={() => setFilterVisible(!filterVisible)}
-        >
-          <Feather name="sliders" size={20} color="#000" />
-        </TouchableOpacity>
-      </Animated.View>
-    );
-  };
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      {/* Header */}
-      {/* <Animated.View style={[styles.header, { opacity: headerOpacity }]}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="arrow-back" size={22} color="#000" />
-        </TouchableOpacity>
 
-        <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerTitle}>Nearby Riders</Text>
-          {!isLoading && (
-            <Text style={styles.headerCount}>
-              {nearbyUsers.length}{" "}
-              {nearbyUsers.length === 1 ? "person" : "people"} found
-            </Text>
-          )}
-        </View>
-
-        <TouchableOpacity
-          style={styles.filterButton}
-          onPress={() => setFilterVisible(!filterVisible)}
-        >
-          <Feather name="sliders" size={20} color="#000" />
-        </TouchableOpacity>
-      </Animated.View> */}
-      // Replace the existing header section in the return statement with this
-      code:
-      {/* Header */}
       <Animated.View style={[styles.header, { opacity: headerOpacity }]}>
         <TouchableOpacity
           style={styles.backButton}
@@ -650,18 +771,15 @@ const formatDepartureTime = (timeString) => {
         </TouchableOpacity>
 
         <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerTitle}>Nearby Riders</Text>
+          <Text style={styles.headerTitle}>{getHeaderTitle()}</Text>
           <View style={styles.headerRouteContainer}>
             <Text style={styles.headerRouteText} numberOfLines={1}>
-              {pickup.split(",")[0]} → {destination.split(",")[0]}
+              {getHeaderRouteText()}
             </Text>
           </View>
-          {/* {!isLoading && (
-            <Text style={styles.headerCount}>
-              {nearbyUsers.length}{" "}
-              {nearbyUsers.length === 1 ? "person" : "people"} found
-            </Text>
-          )} */}
+          {userType === "guest" && (
+            <Text style={styles.guestHeaderText}>Sign in to book rides</Text>
+          )}
         </View>
 
         <TouchableOpacity
@@ -671,11 +789,29 @@ const formatDepartureTime = (timeString) => {
           {/* <Feather name="sliders" size={20} color="#000" /> */}
         </TouchableOpacity>
       </Animated.View>
-      {/* Loading/Empty State */}
+
+      {/* {renderFilterMenu()} */}
+
       {isLoading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#000" />
           <Text style={styles.loadingText}>Finding nearby riders...</Text>
+        </View>
+      ) : searchError ? (
+        <View style={styles.emptyContainer}>
+          <MaterialCommunityIcons
+            name="alert-circle-outline"
+            size={70}
+            color="#FF6B35"
+          />
+          <Text style={styles.emptyText}>Search Error</Text>
+          <Text style={styles.emptySubtext}>{searchError}</Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={searchByCity ? handleCitySearchResults : fetchNearbyUsers}
+          >
+            <Text style={styles.retryButtonText}>Try Again</Text>
+          </TouchableOpacity>
         </View>
       ) : nearbyUsers.length === 0 ? (
         <View style={styles.emptyContainer}>
@@ -690,7 +826,7 @@ const formatDepartureTime = (timeString) => {
           </Text>
           <TouchableOpacity
             style={styles.retryButton}
-            onPress={fetchNearbyUsers}
+            onPress={searchByCity ? handleCitySearchResults : fetchNearbyUsers}
           >
             <Text style={styles.retryButtonText}>Retry Search</Text>
           </TouchableOpacity>
@@ -713,11 +849,13 @@ const formatDepartureTime = (timeString) => {
   );
 }
 
+// Styles would go here, but skipped as requested
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#fff",
-    marginTop: 30,
+    // marginTop: 30,
   },
   header: {
     flexDirection: "row",
@@ -740,6 +878,7 @@ const styles = StyleSheet.create({
   },
   headerTitleContainer: {
     alignItems: "center",
+    flex: 1,
   },
   headerTitle: {
     fontSize: 18,
@@ -750,6 +889,27 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: "Regular",
     color: "#666",
+    marginTop: 2,
+  },
+  headerRouteContainer: {
+    backgroundColor: "#f0f0f0",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginTop: 4,
+    marginBottom: 4,
+    maxWidth: width - 140,
+  },
+  headerRouteText: {
+    fontSize: 13,
+    fontFamily: "Medium",
+    color: "#555",
+    textAlign: "center",
+  },
+  guestHeaderText: {
+    fontSize: 12,
+    fontFamily: "Regular",
+    color: "#FF6B35",
     marginTop: 2,
   },
   filterButton: {
@@ -795,93 +955,6 @@ const styles = StyleSheet.create({
   filterTextSelected: {
     color: "#000",
     fontFamily: "Bold",
-  },
-  routeCardContainer: {
-    margin: 20,
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 4,
-    borderWidth: 1,
-    borderColor: "rgba(0, 0, 0, 0.04)",
-  },
-  routeWrapper: {
-    position: "relative",
-    paddingLeft: 30,
-    height: 90,
-  },
-  tripIdContainer: {
-    alignSelf: "flex-start",
-    backgroundColor: "#f5f5f5",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
-    marginTop: 8,
-    marginLeft: 30,
-  },
-  tripIdText: {
-    fontSize: 12,
-    fontFamily: "Medium",
-    color: "#666",
-  },
-  routePointWrapper: {
-    position: "absolute",
-    left: 0,
-    top: 0,
-    width: 20,
-    alignItems: "center",
-  },
-  routePointOutline: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: "rgba(0,0,0,0.05)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  originPoint: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: "#000",
-  },
-  verticalLine: {
-    position: "absolute",
-    left: 10,
-    top: 16,
-    bottom: 40,
-    width: 1.5,
-    backgroundColor: "#ddd",
-  },
-  destinationPoint: {
-    width: 12,
-    height: 12,
-    backgroundColor: "#000",
-    borderRadius: 3,
-    transform: [{ rotate: "45deg" }],
-  },
-  routeTextContainerMain: {
-    paddingLeft: 10,
-  },
-  locationContainer: {
-    marginBottom: 6,
-  },
-  locationLabelMain: {
-    fontSize: 10,
-    fontFamily: "Regular",
-    fontWeight: "600",
-    color: "#888",
-    marginBottom: 4,
-    letterSpacing: 0.5,
-  },
-  locationTextMain: {
-    fontSize: 16,
-    fontFamily: "Medium",
-    color: "#000",
   },
   listContainer: {
     paddingHorizontal: 20,
@@ -947,12 +1020,28 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   cardSelected: {
-    // borderColor: "#000",
     borderWidth: 2,
     shadowColor: "#000",
     shadowOpacity: 0.15,
     shadowRadius: 12,
     elevation: 5,
+  },
+  guestBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFF5F0",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginBottom: 12,
+    borderLeftWidth: 3,
+    borderLeftColor: "#FF6B35",
+  },
+  guestBannerText: {
+    fontSize: 13,
+    fontFamily: "Medium",
+    color: "#FF6B35",
+    marginLeft: 6,
   },
   cardHeader: {
     flexDirection: "row",
@@ -1179,36 +1268,242 @@ const styles = StyleSheet.create({
     color: "#555",
     textAlign: "center",
   },
-departureContainer: {
-  flexDirection: 'row',
-  paddingHorizontal: 16,
-  paddingVertical: 12,
-  borderBottomWidth: 1,
-  borderBottomColor: '#EFEFEF',
-},
-departureIconContainer: {
-  width: 24,
-  alignItems: 'center',
-  marginRight: 12,
-  paddingTop: 2,
-},
-departureDetails: {
-  flex: 1,
-},
-departureRow: {
-  flexDirection: 'row',
-  marginBottom: 4,
-  alignItems: 'center',
-},
-departureLabel: {
-  fontSize: 14,
-  fontWeight: '600',
-  color: '#555',
-  width: 110,
-},
-departureValue: {
-  fontSize: 14,
-  color: '#333',
-  fontWeight: '500',
-},
+  departureContainer: {
+    flexDirection: "row",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#EFEFEF",
+  },
+  departureIconContainer: {
+    width: 24,
+    alignItems: "center",
+    marginRight: 12,
+    paddingTop: 2,
+  },
+  departureDetails: {
+    flex: 1,
+  },
+  departureRow: {
+    flexDirection: "row",
+    marginBottom: 4,
+    alignItems: "center",
+  },
+  departureLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#555",
+    width: 110,
+  },
+  departureValue: {
+    fontSize: 14,
+    color: "#333",
+    fontWeight: "500",
+  },
+  ratingContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 215, 0, 0.15)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  ratingText: {
+    fontSize: 14,
+    fontFamily: "Bold",
+    color: "#333",
+    marginLeft: 4,
+  },
+  rideInfoLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 6,
+    justifyContent: "space-between",
+  },
+  badgeContainer: {
+    backgroundColor: "#f0f0f0",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  rideCount: {
+    fontSize: 13,
+    fontFamily: "Medium",
+    color: "#555",
+  },
+  rideDate: {
+    fontSize: 13,
+    fontFamily: "Regular",
+    color: "#888",
+  },
+  contactButtonGuest: {
+    backgroundColor: "#FFF",
+    borderWidth: 2,
+    borderColor: "#FF6B35",
+  },
+  contactButtonTextGuest: {
+    color: "#FF6B35",
+  },
+  rideHistoryCard: {
+    backgroundColor: "#FFF",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.04)",
+    marginTop: 15,
+  },
+
+  rideHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 8,
+  },
+
+  rideTimeSection: {
+    flex: 1,
+  },
+
+  rideDate: {
+    fontSize: 16,
+    fontFamily: "Bold",
+    color: "#000",
+    marginBottom: 2,
+  },
+
+  rideTime: {
+    fontSize: 14,
+    fontFamily: "Regular",
+    color: "#666",
+  },
+
+  ridePriceSection: {
+    alignItems: "flex-end",
+  },
+
+  ridePrice: {
+    fontSize: 18,
+    fontFamily: "Bold",
+    color: "#000",
+  },
+
+  rideTypeSection: {
+    marginBottom: 8,
+  },
+
+  rideType: {
+    fontSize: 16,
+    fontFamily: "Medium",
+    color: "#000",
+  },
+
+  rideLocationSection: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 12,
+  },
+
+  locationTextContainer: {
+    flex: 1,
+    marginRight: 12,
+  },
+
+  startLocation: {
+    fontSize: 14,
+    fontFamily: "Medium",
+    color: "#333",
+    marginBottom: 4,
+  },
+
+  endLocation: {
+    fontSize: 13,
+    fontFamily: "Regular",
+    color: "#888",
+    lineHeight: 18,
+  },
+
+  driverSection: {
+    alignItems: "center",
+    flexDirection: "row",
+  },
+
+  carIconContainer: {
+    marginRight: 8,
+  },
+
+  driverAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  driverAvatarText: {
+    color: "#FFF",
+    fontFamily: "Bold",
+    fontSize: 16,
+  },
+
+  statusBadge: {
+    backgroundColor: "#F5F5F5",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 4,
+    alignSelf: "flex-start",
+    marginBottom: 12,
+  },
+
+  statusText: {
+    fontSize: 12,
+    fontFamily: "Bold",
+    color: "#666",
+    letterSpacing: 0.5,
+  },
+
+  bookButton: {
+    backgroundColor: "#000",
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: "center",
+  },
+
+  bookButtonGuest: {
+    backgroundColor: "#FFF",
+    borderWidth: 2,
+    borderColor: "#FF6B35",
+  },
+
+  bookButtonText: {
+    color: "#FFF",
+    fontFamily: "Bold",
+    fontSize: 14,
+  },
+
+  bookButtonTextGuest: {
+    color: "#FF6B35",
+  },
+  tripTypeBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: "#E0F7FA", // light cyan or use "#D1E7DD" for green
+    paddingHorizontal: 13,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginTop: 8,
+    marginLeft: 4,
+  },
+
+  tripTypeBadgeText: {
+    fontSize: 15,
+    color: "#00796B", // teal shade or "#0F5132" for green
+    fontWeight: "600",
+  },
 });

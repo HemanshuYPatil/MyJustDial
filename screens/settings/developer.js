@@ -21,32 +21,35 @@ import {
 
 export default function DeveloperDetailsScreen({ navigation }) {
   // Developer data
-  const developers = [
-    {
-      id: 1,
-      name: "Hemanshu Patil",
-      role: "Full Stack Developer",
-      bio: "Full-stack developer with 4+ years of experience specializing in React Native and Firebase. Passionate about creating seamless mobile experiences.",
-      avatarUrl: "https://img.freepik.com/premium-vector/programming-concept-with-cartoon-people-flat-design-web-man-coding-engineering-software-creating-scripts-algorithms-vector-illustration-social-media-banner-marketing-material_9209-15330.jpg?w=826",
-      skills: ["React Native", "Firebase", "JavaScript", "UI/UX"],
-      email: "hemanshuypatil@gmail.com",
-      github: "https://github.com/HemanshuYPatil",
-      linkedin: "linkedin.com/in/alexjohnson",
-      phone: "+1-234-567-8901",
-    },
-    {
-      id: 2,
-      name: "Atharva Patil",
-      role: "Technical Lead",
-      bio: "Technical Lead with 5+ years of experience in application logic development and testing. Expert in building scalable systems, ensuring code quality, and leading end-to-end technical execution.",
-      avatarUrl: "https://img.freepik.com/premium-vector/programming-concept-with-cartoon-people-flat-design-web-man-coding-engineering-software-creating-scripts-algorithms-vector-illustration-social-media-banner-marketing-material_9209-15330.jpg?w=826",
-      skills: ["UI Design","Animation", "Prototyping"],
-      email: "atharvapatil15092005@gmail.com",
-      github: "github.com/atharvapatil",
-      linkedin: "linkedin.com/in/sarahchen",
-      phone: "+1-987-654-3210",
-    },
-  ];
+ const developers = [
+  {
+    id: 1,
+    name: "Puspendu Biswas",
+    role: "CEO (Founder)",
+    bio: "Founder & CEO with strong expertise in mobile development and UI/UX. Passionate about building scalable apps using React Native and Firebase.",
+    avatarUrl:
+      "https://lh3.googleusercontent.com/a/ACg8ocJ6nmgc7T3FxBor6s_3a_RCIrZXxgkvfcNZzYITQXza3EpobqY=s360-c-no",
+    skills: ["React Native", "Firebase", "JavaScript", "UI/UX"],
+    email: "puspendu.biswas1982@gmail.com",
+    github: "https://github.com/HemanshuYPatil",
+    linkedin: "linkedin.com/in/alexjohnson",
+    phone: "+1-234-567-8901",
+  },
+  {
+    id: 2,
+    name: "Hemanshu Patil",
+    role: "Developer",
+    bio: "Technical Lead with 3+ years of experience in application logic development and testing. Expert in building scalable systems, ensuring code quality, and leading end-to-end technical execution.",
+    avatarUrl:
+      "https://firebasestorage.googleapis.com/v0/b/parcelo-e9635.firebasestorage.app/o/Screenshot%202025-06-29%20004352.png?alt=media&token=2b4713c1-f6a2-4d4b-b425-ac1a6e319938",
+    skills: ["UI Design", "Animation", "Prototyping"],
+    email: "hemanshuypatil@gmail.com",
+    github: "github.com/atharvapatil",
+    linkedin: "linkedin.com/in/sarahchen",
+    phone: "+1-987-654-3210",
+  },
+];
+
 
   // Handle contact actions
   const handleContact = (type, value) => {
@@ -113,7 +116,7 @@ export default function DeveloperDetailsScreen({ navigation }) {
             </View>
 
             {/* Skills Section */}
-            <View style={styles.skillsSection}>
+            {/* <View style={styles.skillsSection}>
               <Text style={styles.sectionTitle}>Skills</Text>
               <View style={styles.skillsContainer}>
                 {developer.skills.map((skill, index) => (
@@ -122,7 +125,7 @@ export default function DeveloperDetailsScreen({ navigation }) {
                   </View>
                 ))}
               </View>
-            </View>
+            </View> */}
 
             {/* Contact Section */}
             <View style={styles.contactSection}>
@@ -139,7 +142,7 @@ export default function DeveloperDetailsScreen({ navigation }) {
               </TouchableOpacity>
 
               
-              <TouchableOpacity 
+              {/* <TouchableOpacity 
                 style={styles.contactItem}
                 onPress={() => handleContact("github", developer.github)}
               >
@@ -147,7 +150,7 @@ export default function DeveloperDetailsScreen({ navigation }) {
                   <AntDesign name="github" size={20} color="#333" />
                 </View>
                 <Text style={styles.contactText}>{developer.github}</Text>
-              </TouchableOpacity>
+              </TouchableOpacity> */}
 
             
             </View>

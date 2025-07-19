@@ -24,7 +24,7 @@ const GetStartModel = ({ isVisible, onClose,navigation }) => {
 // 
   const handleskip = () => {
     onClose();
-    navigation.navigate("Home");
+    navigation.navigate("login");
   }
 
   const handlesignup = () => {
@@ -54,9 +54,9 @@ const GetStartModel = ({ isVisible, onClose,navigation }) => {
             <Text style={styles.buttonText}>Sign Up</Text>
           </TouchableOpacity>
           
-          {/* <TouchableOpacity style={styles.skipButton} onPress={handleskip}>
-            <Text style={styles.skipButtonText}>Skip & Continue</Text>
-          </TouchableOpacity> */}
+          <TouchableOpacity style={styles.skipButton} onPress={handleskip}>
+            <Text style={styles.skipButtonText}>Log In</Text>
+          </TouchableOpacity>
         </View>
       </View>
     </Modal>

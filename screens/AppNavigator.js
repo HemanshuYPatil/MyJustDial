@@ -3,6 +3,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons, AntDesign, FontAwesome5, Feather } from '@expo/vector-icons';
 import { View, TouchableOpacity, StyleSheet, Text } from 'react-native';
 import { useFonts } from 'expo-font';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import HomeScreen from './HomeScreen';
 import BookingsScreen from './book';
@@ -17,9 +18,6 @@ const fonts = {
   medium: 'Medium',
   bold: 'Bold',
 };
-
-
-
 
 const Tab = createBottomTabNavigator();
 
@@ -38,6 +36,8 @@ const CustomTabBarButton = ({ onPress }) => {
 };
 
 const AppNavigator = () => {
+  const insets = useSafeAreaInsets(); // safe area handling
+
   const [fontsLoaded] = useFonts({
     Regular: require('../assets/fonts/regular.ttf'),
     Medium: require('../assets/fonts/medium.ttf'),
@@ -57,13 +57,15 @@ const AppNavigator = () => {
             return <Ionicons name="home" size={24} color={color} />;
           } else if (route.name === 'Services') {
             return <Ionicons name="grid" size={24} color={color} />;
-          } else if (route.name === 'My-Trips') {
+          } else if (route.name === 'Movements') {
             return <FontAwesome5 name="history" size={22} color={color} />;
           } else if (route.name === 'Account') {
             return <Feather name="user" size={24} color={color} />;
-          }
-          else if (route.name === 'Chat') {
+          } else if (route.name === 'Chat') {
             return <Ionicons name="chatbubble-ellipses" size={24} color={color} />;
+          }
+          else if (route.name === 'Post') {
+            return <FontAwesome5 name="plus-circle" size={24} color={color} />;
           }
           return null;
         },
@@ -76,16 +78,19 @@ const AppNavigator = () => {
           else if (route.name === 'Activity') label = 'Activity';
           else if (route.name === 'Account') label = 'Account';
           else if (route.name === 'Chat') label = 'Chat';
-          else if (route.name === 'My-Trips') label = 'My Trips';
+          else if (route.name === 'Movements') label = 'Movements';
+          else if (route.name === 'Post') label = 'Post';
           else return null;
 
           return (
-            <Text style={{
-              color,
-              fontSize: 12,
-              marginTop: 3,
-              fontFamily: fonts.medium
-            }}>
+            <Text
+              style={{
+                color,
+                fontSize: 12,
+                marginTop: 3,
+                fontFamily: fonts.medium,
+              }}
+            >
               {label}
             </Text>
           );
@@ -93,33 +98,30 @@ const AppNavigator = () => {
         tabBarActiveTintColor: 'black',
         tabBarInactiveTintColor: '#aaa',
         tabBarStyle: {
-          height: 65,
-          paddingBottom: 5,
+          height: 65 + insets.bottom,
+          paddingBottom: 10 + insets.bottom,
           paddingTop: 5,
           backgroundColor: 'white',
           borderTopWidth: 1,
           borderTopColor: '#eee',
-          padding: 10
         },
         headerShown: false,
       })}
     >
-      <Tab.Screen name="Home" component={HomeScreen } />
-      {/* <Tab.Screen name="Services" component={BookingsScreen} /> */}
-      <Tab.Screen name="Chat" component={ChatListScreen} />
+      <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen name="Post" component={TripCreationScreen} />
 
-      <Tab.Screen 
-        name="Create" 
-        component={TripCreationScreen} 
+      <Tab.Screen name="Chat" component={ChatListScreen} />
+      {/* <Tab.Screen
+        name="Create"
+        component={TripCreationScreen}
         options={{
           tabBarButton: (props) => <CustomTabBarButton {...props} />,
           tabBarLabel: () => null,
         }}
-      />
-      <Tab.Screen name="My-Trips" component={MyTripsScreen} />
-
-      {/* <Tab.Screen name="Activity" component={BookingsScreen} /> */}
-      <Tab.Screen name="Account" component={ProfileScreen} />
+      /> */}
+      <Tab.Screen name="Movements" component={MyTripsScreen} />
+      {/* <Tab.Screen name="Account" component={ProfileScreen} /> */}
     </Tab.Navigator>
   );
 };
@@ -131,7 +133,7 @@ const styles = StyleSheet.create({
     height: 70,
     alignItems: 'center',
     justifyContent: 'center',
-    top: -15,
+    top: -30, 
   },
   plusButton: {
     width: 55,

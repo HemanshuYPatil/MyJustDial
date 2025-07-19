@@ -1,27 +1,35 @@
 {
   "expo": {
-    "name": "Parcelo",
-    "slug": "parcelo",
+    "name": "PathShare",
+    "slug": "pathshare",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/icon-1.png",
     "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "splash": {
-      "image": "./assets/icon.png",
+      "image": "./assets/icon-1.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
-    "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "edgeToEdgeEnabled": true,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/icon-1.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.hemanshupatil.parcelo"
+      "package": "com.puspendustudio.pathshare",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyDkw5Q09G-FzQC0tw9IZAu_9q3-dL8QDIg"
+        }
+        
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -40,22 +48,21 @@
     },
     "extra": {
       "eas": {
-        "projectId": "9c7bef46-cbfc-47c1-a85d-9fdbeccfd884"
+        "projectId": "df4bfa2f-569e-4baa-bf39-54faf8a2a1a2"
       }
     },
     "plugins": [
       "expo-font",
+      "expo-web-browser",
       [
-        "expo-build-properties",
+        "sentry-expo",
         {
-          "android": {
-            "kotlinVersion": "1.8.0",
-            "composeCompilerVersion": "1.5.11"
-          }
+          "organization": "85395a331765",
+          "project": "react-native",
+          "authToken": "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"
         }
-      ],
-      "./custom-plugin"
+      ]
     ],
-    "owner": "hemanshu-patil"
+    "owner": "hemanshu-dev-2"
   }
 }

@@ -4,15 +4,13 @@ import {
   Text,
   View,
   TouchableOpacity,
-  ScrollView,
-  Image,
   Dimensions,
   ActivityIndicator,
   Alert,
   Platform,
 } from "react-native";
-import { Ionicons, MaterialIcons, Feather } from "@expo/vector-icons";
-import { auth, geofirestore, firebase } from "../lib/db/firebase";
+import { MaterialIcons, Feather } from "@expo/vector-icons";
+import { auth, geofirestore, GeoPoint } from "../lib/db/firebase";
 import { getusername } from "../lib/query/user";
 import * as Location from "expo-location";
 
@@ -24,32 +22,24 @@ export const NearbyRidersSection = ({ navigation }) => {
   const [userLocation, setUserLocation] = useState(null);
   const [locationError, setLocationError] = useState(null);
 
-  // Get current user location
   const getCurrentLocation = async () => {
     try {
       setIsLoading(true);
-
-      // Request permissions
       const { status } = await Location.requestForegroundPermissionsAsync();
-
       if (status !== "granted") {
         setLocationError("Permission to access location was denied");
         setIsLoading(false);
         return;
       }
-
-      // Get current position
       const location = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
       });
-
-      setUserLocation({
+      const coords = {
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
-      });
-
-      // After getting location, fetch nearby riders
-      fetchNearbyRiders(location.coords);
+      };
+      setUserLocation(coords);
+      fetchNearbyRiders(coords);
     } catch (error) {
       console.error("Error getting location:", error);
       setLocationError("Could not fetch location");
@@ -57,75 +47,54 @@ export const NearbyRidersSection = ({ navigation }) => {
     }
   };
 
-  // Calculate distance between two coordinates in kilometers
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
-    const R = 6371; // Radius of the earth in km
+    const R = 6371;
     const dLat = deg2rad(lat2 - lat1);
     const dLon = deg2rad(lon2 - lon1);
     const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.sin(dLat / 2) ** 2 +
       Math.cos(deg2rad(lat1)) *
         Math.cos(deg2rad(lat2)) *
-        Math.sin(dLon / 2) *
-        Math.sin(dLon / 2);
+        Math.sin(dLon / 2) ** 2;
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    const distance = R * c; // Distance in km
-    return distance;
+    return R * c;
   };
 
-  const deg2rad = (deg) => {
-    return deg * (Math.PI / 180);
-  };
+  const deg2rad = (deg) => deg * (Math.PI / 180);
 
-  // Fetch nearby riders
   const fetchNearbyRiders = async (coords) => {
     try {
-      // Skip if no user location
-      if (!coords || !coords.latitude || !coords.longitude) {
+      if (!coords?.latitude || !coords?.longitude) {
         setIsLoading(false);
         return;
       }
-
-      // Get reference point (current location)
-      const center = new firebase.firestore.GeoPoint(
-        coords.latitude,
-        coords.longitude
-      );
-
-      // Query trips within 5km radius
+      const center = new GeoPoint(coords.latitude, coords.longitude);
       const geoCollection = geofirestore.collection("trips");
-      const query = geoCollection.near({
-        center,
-        radius: 5, // 5km radius
-      });
-
+      const query = geoCollection.near({ center, radius: 5 });
       const snapshot = await query.get();
 
-      // Process results
       const usersData = [];
       const processedUserIds = new Set();
       const userPromises = [];
 
       snapshot.forEach((doc) => {
         const tripData = doc.data();
-
-        // Skip user's own trips
-        if (tripData.userId === auth.currentUser.uid) return;
-
-        // Check if user has already been processed
-        if (processedUserIds.has(tripData.userId)) return;
-
-        if (tripData.status !== "active") return;
+        if (
+          tripData.userId === auth.currentUser?.uid ||
+          processedUserIds.has(tripData.userId) ||
+          tripData.status !== "active"
+        )
+          return;
 
         processedUserIds.add(tripData.userId);
 
-        // Add to user data
         const userData = {
           id: tripData.userId,
           tripId: doc.id,
           startLocation:
             tripData.startlocationName?.split(",")[0] || "Location",
-          endLocation: tripData.endlocationName?.split(",")[0] || "Destination",
+          endLocation:
+            tripData.endlocationName?.split(",")[0] || "Destination",
           startCoords: tripData.startLocation,
           endCoords: tripData.endLocation,
           timestamp: tripData.timestamp || Date.now(),
@@ -135,17 +104,16 @@ export const NearbyRidersSection = ({ navigation }) => {
             tripData.startLocation.latitude,
             tripData.startLocation.longitude
           ),
-          rating: (Math.random() * 2 + 3).toFixed(1), // Mock rating between 3.0-5.0
-          rides: Math.floor(Math.random() * 50) + 1, // Mock number of rides
+          rating: (Math.random() * 2 + 3).toFixed(1),
+          rides: Math.floor(Math.random() * 50) + 1,
           avatarColor: getRandomColor(),
-          verified: Math.random() > 0.3, // Random verification status
+          verified: Math.random() > 0.3,
           createdAt: tripData.createdAt,
           departure: tripData.departureTime,
         };
 
         usersData.push(userData);
 
-        // Add promise to fetch username
         userPromises.push(
           getusername(tripData.userId)
             .then((name) => {
@@ -160,13 +128,8 @@ export const NearbyRidersSection = ({ navigation }) => {
         );
       });
 
-      // Wait for all username fetches to complete
       await Promise.all(userPromises);
-
-      // Sort by distance
       usersData.sort((a, b) => a.distance - b.distance);
-
-      // Limit to 5 users for the preview
       setNearbyUsers(usersData.slice(0, 5));
     } catch (error) {
       console.error("Error fetching nearby riders:", error);
@@ -175,7 +138,6 @@ export const NearbyRidersSection = ({ navigation }) => {
     }
   };
 
-  // Get random color for avatar
   const getRandomColor = () => {
     const colors = [
       "#4D7EFF",
@@ -191,60 +153,33 @@ export const NearbyRidersSection = ({ navigation }) => {
   };
 
   useEffect(() => {
-    // Get location and fetch nearby riders when component mounts
     getCurrentLocation();
-
-    // Set up location subscription
     let locationSubscription;
-
     (async () => {
-      if (
-        Platform.OS === "android" &&
-        !Location.hasStartedLocationUpdatesAsync
-      ) {
-        await Location.startLocationUpdatesAsync("location-tracking", {
-          accuracy: Location.Accuracy.Balanced,
-          timeInterval: 60000, // Update every 60 seconds
-          distanceInterval: 100, // Or every 100 meters
-        });
-      }
-
       locationSubscription = await Location.watchPositionAsync(
         {
           accuracy: Location.Accuracy.Balanced,
-          timeInterval: 60000, // Update every 60 seconds
-          distanceInterval: 100, // Or every 100 meters
+          timeInterval: 60000,
+          distanceInterval: 100,
         },
         (location) => {
           const coords = {
             latitude: location.coords.latitude,
             longitude: location.coords.longitude,
           };
-
           setUserLocation(coords);
           fetchNearbyRiders(coords);
         }
       );
     })();
-
-    // Clean up subscription
-    return () => {
-      if (locationSubscription) {
-        locationSubscription.remove();
-      }
-    };
+    return () => locationSubscription?.remove();
   }, []);
 
   const handleSeeAll = () => {
-    // Navigate to full rider search results screen
     if (!userLocation) {
-      Alert.alert(
-        "Location Error",
-        "Could not determine your location. Please try again."
-      );
+      Alert.alert("Location Error", "Could not determine your location.");
       return;
     }
-
     navigation.navigate("RiderSearchResults", {
       pickup: "Current Location",
       destination: "Any Destination",
@@ -257,7 +192,6 @@ export const NearbyRidersSection = ({ navigation }) => {
   };
 
   const handleViewRider = (rider) => {
-    // Navigate to rider details screen
     navigation.navigate("TripUserDetails", {
       userId: rider.id,
       pickupLocation: rider.startLocation,
@@ -267,46 +201,41 @@ export const NearbyRidersSection = ({ navigation }) => {
     });
   };
 
-  const handleRefresh = () => {
-    getCurrentLocation();
-  };
+  const handleRefresh = () => getCurrentLocation();
 
-  const renderNearbyRidersList = () => {
-    return (
-      <View style={styles.recentsList}>
-        {nearbyUsers.map((rider, index) => (
-          <React.Fragment key={rider.id + index}>
-            <TouchableOpacity 
-              style={styles.recentItem}
+  const renderNearbyRidersList = () => (
+    <View style={styles.recentsList}>
+      {nearbyUsers.map((rider, index) => (
+        <React.Fragment key={rider.id + index}>
+          <TouchableOpacity
+            style={styles.recentItem}
+            onPress={() => handleViewRider(rider)}
+          >
+            <View
+              style={[styles.recentIcon, { backgroundColor: rider.avatarColor }]}
+            >
+              <Text style={styles.avatarText}>
+                {getusername(rider.id)|| "U"}
+              </Text>
+            </View>
+            <View style={styles.recentDetails}>
+              <Text style={styles.recentName}>{rider.username}</Text>
+              <Text style={styles.recentAddress}>
+                {rider.startLocation} → {rider.endLocation} • {rider.distance.toFixed(1)}km
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.favoriteButton}
               onPress={() => handleViewRider(rider)}
             >
-              <View style={[styles.recentIcon, { backgroundColor: rider.avatarColor }]}>
-                <Text style={styles.avatarText}>
-                  {rider.username?.charAt(0) || "U"}
-                </Text>
-              </View>
-              <View style={styles.recentDetails}>
-                <Text style={styles.recentName}>{rider.username}</Text>
-                <Text style={styles.recentAddress}>
-                  {rider.startLocation} → {rider.endLocation} • {rider.distance.toFixed(1)}km
-                </Text>
-              </View>
-              <TouchableOpacity 
-                style={styles.favoriteButton}
-                onPress={() => handleViewRider(rider)}
-              >
-                <Feather name="arrow-right" size={20} color="#ccc" />
-              </TouchableOpacity>
+              <Feather name="arrow-right" size={20} color="#ccc" />
             </TouchableOpacity>
-            
-            {index < nearbyUsers.length - 1 && (
-              <View style={styles.itemDivider} />
-            )}
-          </React.Fragment>
-        ))}
-      </View>
-    );
-  };
+          </TouchableOpacity>
+          {index < nearbyUsers.length - 1 && <View style={styles.itemDivider} />}
+        </React.Fragment>
+      ))}
+    </View>
+  );
 
   const renderEmptyState = () => {
     if (isLoading) {
@@ -343,23 +272,14 @@ export const NearbyRidersSection = ({ navigation }) => {
     <View style={styles.sectionContainer}>
       <View style={styles.sectionHeader}>
         <View style={styles.sectionTitleContainer}>
-          <MaterialIcons
-            name="person"
-            size={20}
-            color="#000"
-            style={styles.sectionIcon}
-          />
+          <MaterialIcons name="person" size={20} color="#000" style={styles.sectionIcon} />
           <Text style={styles.sectionTitle}>Nearby Riders</Text>
         </View>
-        <TouchableOpacity
-          style={styles.sectionActionButton}
-          onPress={handleSeeAll}
-        >
+        <TouchableOpacity style={styles.sectionActionButton} onPress={handleSeeAll}>
           <Text style={styles.sectionAction}>See All</Text>
           <Feather name="chevron-right" size={16} color="#000" />
         </TouchableOpacity>
       </View>
-
       {nearbyUsers.length > 0 ? renderNearbyRidersList() : renderEmptyState()}
     </View>
   );
@@ -406,8 +326,6 @@ const styles = StyleSheet.create({
     color: "#000",
     marginRight: 4,
   },
-  
-  // Recent places style for nearby users
   recentsList: {
     backgroundColor: "#fff",
     borderRadius: 12,
@@ -421,7 +339,6 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "#f5f5f5",
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
@@ -457,8 +374,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#f0f0f0",
     marginVertical: 2,
   },
-  
-  // Empty state
   emptyStateContainer: {
     height: 150,
     justifyContent: "center",
@@ -483,5 +398,5 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontFamily: "Medium",
     fontSize: 12,
-  }
+  },
 });

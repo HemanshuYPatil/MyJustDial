@@ -37,6 +37,9 @@ Notifications.setNotificationHandler({
 });
 
 export default function NewSignUp({ navigation }) {
+  const { route } = navigation;
+  const phone = route?.params?.phone || "";
+
   const [phoneNumber, setPhoneNumber] = useState("");
   const [selectedCountry, setSelectedCountry] = useState({
     code: "+91",
@@ -86,7 +89,8 @@ export default function NewSignUp({ navigation }) {
         await setDoc(doc(db, "users", user.uid), {
           uid: user.uid,
           name: name,
-          phone: user.phoneNumber,
+          phone: phone,
+          phonenumbervisible: false,
           notificationId: expoPushToken,
           createdAt: new Date().toISOString(),
         });

@@ -1,36 +1,29 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import {
   StyleSheet,
   Text,
   View,
   TouchableOpacity,
+  Image,
   Platform,
   Dimensions,
   StatusBar as RNStatusBar,
-  ActivityIndicator,
-  Image,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
-import { Ionicons, MaterialIcons, FontAwesome5 } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFonts } from "expo-font";
-import { Video, ResizeMode } from "expo-av";
-import * as Device from "expo-device";
-import GetStartModel from "../components/startmodel";
+import LottieView from "lottie-react-native";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "../lib/db/firebase";
+import GetStartModel from "../components/startmodel";
 
 const { width, height } = Dimensions.get("window");
 const SCREEN_HEIGHT = height;
-const STATUS_BAR_HEIGHT =
-  Platform.OS === "ios" ? 50 : RNStatusBar.currentHeight || 0;
 
-export default function GetStartedScreen({ navigation }) {
-  const videoRef = useRef(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [videoError, setVideoError] = useState(false);
-  const [useStaticBackground, setUseStaticBackground] = useState(false);
-  const [model, setmodel] = useState(false);
+export default function SplashScreens({ navigation }) {
+  const [isLoading, setIsLoading] = useState(true);
+  const [showContent, setShowContent] = useState(false);
+  const [model, setModel] = useState(false);
   const [fontsLoaded] = useFonts({
     Regular: require("../assets/fonts/regular.ttf"),
     Medium: require("../assets/fonts/medium.ttf"),
@@ -38,45 +31,27 @@ export default function GetStartedScreen({ navigation }) {
   });
 
   useEffect(() => {
-    const checkDeviceCapability = async () => {
-      const deviceType = await Device.getDeviceTypeAsync();
-      const isLowEndDevice =
-        (Platform.OS === "android" && Platform.Version < 24) ||
-        deviceType !== Device.DeviceType.PHONE;
-
-      setUseStaticBackground(isLowEndDevice);
-    };
-
-    checkDeviceCapability();
-  }, []);
-
-  useEffect(() => {
-    if (videoRef.current && !useStaticBackground) {
-      setTimeout(() => {
-        videoRef.current.playAsync();
-      }, 300);
-    }
-
-    return () => {
-      if (videoRef.current) {
-        videoRef.current.unloadAsync();
-      }
-    };
-  }, [useStaticBackground]);
-
-
-  useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
-       
         navigation.reset({
           index: 0,
-          routes: [{ name: 'Home' }],
+          routes: [{ name: "Home" }],
         });
-      }  
+      }
     });
 
     return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "Home" }],
+      });
+    }, 4000); // 4 seconds delay
+
+    return () => clearTimeout(timer);
   }, []);
 
   if (!fontsLoaded) {
@@ -84,50 +59,36 @@ export default function GetStartedScreen({ navigation }) {
   }
 
   const handleGetStarted = () => {
-    setmodel(true);
+    setModel(true);
   };
 
-  const handleSignIn = () => {
-    navigation.navigate("SignIn");
-  };
-
-  const renderBackground = () => {
-    if (useStaticBackground || videoError) {
-      return (
-        <Image
-          source={require("../assets/icon.png")}
-          style={styles.backgroundImage}
-          resizeMode="cover"
-        />
-      );
-    }
-
+  // Splash Screen Content
+  if (isLoading) {
     return (
-      <>
-        {isLoading && (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#fff" />
-          </View>
-        )}
-
-        <Video
-          source={require("../assets/test.mp4")}
-          style={styles.backgroundVideo}
-          shouldPlay
-          isLooping
-          resizeMode="cover"
-          isMuted
-        />
-      </>
+      <View style={styles.container}>
+      <StatusBar style="light" />
+      <Image
+        source={require("../assets/splash-screens.jpg")}
+        style={styles.fullScreenImage}
+        resizeMode="cover"
+      />
+    </View>
     );
-  };
+  }
 
+  // Main Get Started Screen
   return (
     <View style={styles.container}>
-      <StatusBar hidden={true} />
-      <GetStartModel isVisible={model} onClose={() => setmodel(false)}  navigation={navigation}/>
+      <StatusBar style="light" />
 
-      {renderBackground()}
+      {/* Background Animation */}
+      <LottieView
+        source={require("../assets/logo.json")}
+        autoPlay
+        loop
+        style={styles.backgroundAnimation}
+        resizeMode="cover"
+      />
 
       <LinearGradient
         colors={["rgba(0,0,0,0.3)", "rgba(0,0,0,0.8)"]}
@@ -140,61 +101,74 @@ export default function GetStartedScreen({ navigation }) {
             <View style={styles.headerRight} />
           </View>
 
+          {/* Logo with Animation */}
           <View style={styles.logoContainer}>
-            <Text style={styles.logoText}>Parcelo</Text>
+            <LottieView
+              source={require("../assets/logo.json")}
+              autoPlay
+              loop
+              style={styles.iconAnimation}
+            />
+            <Text style={styles.logoText}>MyJustDial</Text>
             <Text style={styles.tagline}>Your destination, your journey</Text>
           </View>
 
-          {/* <View style={styles.featuresSection}>
-            <Text style={styles.sectionTitle}>Our Features</Text>
+          {/* Features Section with Animated Icons */}
+          <View style={styles.featuresSection}>
+            <Text style={styles.sectionTitle}>Discover Amazing Features</Text>
 
             <View style={styles.menuItem}>
               <View style={styles.menuIconContainer}>
-                <Ionicons name="flash" size={20} color="#fff" />
+                <LottieView
+                  source={require("../assets/logo.json")}
+                  autoPlay
+                  loop
+                  style={styles.menuIconAnimation}
+                />
               </View>
               <View style={styles.menuTextContainer}>
-                <Text style={styles.menuItemText}>Fast Pickups</Text>
+                <Text style={styles.menuItemText}>Find Local Services</Text>
                 <Text style={styles.menuItemSubtext}>
-                  Get picked up within minutes
+                  Discover services near you
                 </Text>
               </View>
             </View>
 
             <View style={styles.menuItem}>
               <View style={styles.menuIconContainer}>
-                <MaterialIcons name="verified" size={20} color="#fff" />
+                <LottieView
+                  source={require("../assets/logo.json")}
+                  autoPlay
+                  loop
+                  style={styles.menuIconAnimation}
+                />
               </View>
               <View style={styles.menuTextContainer}>
-                <Text style={styles.menuItemText}>Trusted Drivers</Text>
+                <Text style={styles.menuItemText}>Easy Booking</Text>
                 <Text style={styles.menuItemSubtext}>
-                  All drivers are verified and trained
+                  Book services instantly
                 </Text>
               </View>
             </View>
 
             <View style={styles.menuItem}>
               <View style={styles.menuIconContainer}>
-                <FontAwesome5 name="shield-alt" size={20} color="#fff" />
+                <LottieView
+                  source={require("../assets/logo.json")}
+                  autoPlay
+                  loop
+                  style={styles.menuIconAnimation}
+                />
               </View>
               <View style={styles.menuTextContainer}>
-                <Text style={styles.menuItemText}>Safe Rides</Text>
-                <Text style={styles.menuItemSubtext}>
-                  Safety is our top priority
-                </Text>
+                <Text style={styles.menuItemText}>24/7 Support</Text>
+                <Text style={styles.menuItemSubtext}>We're here to help</Text>
               </View>
             </View>
-          </View> */}
+          </View>
 
+          {/* Actions Container */}
           <View style={styles.actionsContainer}>
-            <TouchableOpacity
-              style={styles.getStartedButton}
-              onPress={handleGetStarted}
-            >
-              <Text style={styles.getStartedText}>Get Started</Text>
-            </TouchableOpacity>
-
-           
-
             {/* Terms Text */}
             <Text style={styles.termsText}>
               By continuing, you agree to our{" "}
@@ -209,19 +183,54 @@ export default function GetStartedScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
+  // Splash Screen Styles
+  splashContainer: {
+    flex: 1,
+    backgroundColor: "#F89230",
+  },
+  splashGradient: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  splashContent: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  logoAnimation: {
+    width: 200,
+    height: 200,
+    marginBottom: 20,
+  },
+
+  splashLogoText: {
+    fontSize: 42,
+    fontFamily: "Bold",
+    color: "#000",
+    textAlign: "center",
+    marginBottom: 10,
+  },
+  splashTagline: {
+    fontSize: 18,
+    fontFamily: "Regular",
+    color: "#000",
+    opacity: 0.9,
+    textAlign: "center",
+    marginBottom: 40,
+  },
+  loadingAnimation: {
+    width: 80,
+    height: 80,
+  },
+
+  // Main Screen Styles
   container: {
     flex: 1,
-    backgroundColor: "#fff",
+    backgroundColor: "#F89230",
+    justifyContent: "center",
+    alignItems: 'center'
   },
-  backgroundVideo: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    bottom: 0,
-    right: 0,
-    zIndex: 0,
-  },
-  backgroundImage: {
+  backgroundAnimation: {
     position: "absolute",
     top: 0,
     left: 0,
@@ -229,13 +238,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     width: width,
     height: SCREEN_HEIGHT,
-  },
-  loadingContainer: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#000",
-    zIndex: 1,
+    zIndex: 0,
   },
   gradient: {
     flex: 1,
@@ -244,8 +247,8 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     flex: 1,
-    paddingBottom: 0, // Ensuring no extra padding at the bottom
-    justifyContent: "space-between", // Making sure content is at the top and bottom
+    paddingBottom: 0,
+    justifyContent: "space-between",
   },
   header: {
     flexDirection: "row",
@@ -262,6 +265,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 30,
   },
+  iconAnimation: {
+    width: 80,
+    height: 80,
+    marginBottom: 10,
+  },
+  fullScreenImage: {
+    width: 300,
+    height: 300,
+  },
   logoText: {
     fontSize: 36,
     fontFamily: "Bold",
@@ -277,14 +289,14 @@ const styles = StyleSheet.create({
   },
   featuresSection: {
     paddingHorizontal: 20,
-    paddingVertical: 70,
-    marginBottom: 20,
+    paddingVertical: 40,
   },
   sectionTitle: {
     fontSize: 18,
     fontFamily: "Bold",
     color: "#fff",
-    marginBottom: 16,
+    marginBottom: 20,
+    textAlign: "center",
   },
   menuItem: {
     flexDirection: "row",
@@ -294,13 +306,17 @@ const styles = StyleSheet.create({
     borderBottomColor: "rgba(255,255,255,0.1)",
   },
   menuIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(255,255,255,0.2)",
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: "rgba(255,255,255,0.1)",
     justifyContent: "center",
     alignItems: "center",
     marginRight: 16,
+  },
+  menuIconAnimation: {
+    width: 30,
+    height: 30,
   },
   menuTextContainer: {
     flex: 1,
@@ -318,42 +334,32 @@ const styles = StyleSheet.create({
   },
   actionsContainer: {
     paddingHorizontal: 20,
-    marginTop: "auto", // Ensures it stays at the bottom without excess space
+    marginTop: "auto",
   },
   getStartedButton: {
-    backgroundColor: "#000",
+    backgroundColor: "#667eea",
     borderRadius: 12,
     paddingVertical: 16,
+    paddingHorizontal: 20,
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     marginBottom: 16,
     elevation: 3,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
-    shadowRadius: 2,
+    shadowRadius: 4,
   },
   getStartedText: {
     fontSize: 16,
     fontFamily: "Bold",
     color: "#fff",
+    marginRight: 10,
   },
-  signInContainer: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  accountText: {
-    fontSize: 16,
-    fontFamily: "Regular",
-    color: "#fff",
-    opacity: 0.9,
-  },
-  signInText: {
-    fontSize: 18,
-    fontFamily: "Bold",
-    color: "#fff",
-    marginLeft: 6,
+  buttonAnimation: {
+    width: 24,
+    height: 24,
   },
   termsText: {
     fontSize: 12,
@@ -369,3 +375,21 @@ const styles = StyleSheet.create({
     textDecorationLine: "underline",
   },
 });
+
+// Example Lottie JSON files you'll need to add to your assets/animations/ folder:
+/*
+Required Lottie animation files:
+1. logo-animation.json - Main logo animation for splash screen
+2. loading-animation.json - Loading spinner animation
+3. background-animation.json - Background ambient animation
+4. icon-animation.json - Small icon animation for main screen
+5. location-icon.json - Location/map icon animation
+6. booking-icon.json - Booking/calendar icon animation
+7. support-icon.json - Support/help icon animation
+8. arrow-right.json - Arrow animation for button
+
+You can get these from:
+- LottieFiles.com (free animations)
+- Create custom animations in After Effects
+- Use online Lottie generators
+*/

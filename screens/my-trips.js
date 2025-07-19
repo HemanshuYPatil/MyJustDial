@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   StyleSheet,
   Text,
@@ -7,176 +7,272 @@ import {
   TouchableOpacity,
   ScrollView,
   Platform,
-  Dimensions,
   ActivityIndicator,
+  RefreshControl,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
+import { MaterialIcons, MaterialCommunityIcons } from "@expo/vector-icons";
 import {
-  Ionicons,
-  MaterialIcons,
-  MaterialCommunityIcons,
-} from "@expo/vector-icons";
-import { collection, query, where, getDocs } from "firebase/firestore";
+  collection,
+  query,
+  where,
+  getDocs,
+  onSnapshot,
+} from "firebase/firestore";
 import { auth, db } from "../lib/db/firebase";
 
-const { width } = Dimensions.get("window");
-
 export default function MyTripsScreen({ navigation }) {
-  const [activeTab, setActiveTab] = useState("active");
   const [trips, setTrips] = useState([]);
   const [loading, setLoading] = useState(true);
-  const user = auth.currentUser;
+  const [refreshing, setRefreshing] = useState(false);
+  const [user, setUser] = useState(auth.currentUser);
 
+  // Listen for auth state changes
   useEffect(() => {
-    fetchTrips();
-  }, [activeTab]);
+    const unsubscribeAuth = auth.onAuthStateChanged((currentUser) => {
+      setUser(currentUser);
+      if (!currentUser) {
+        // Clear data immediately when user logs out
+        setTrips([]);
+        setLoading(false);
+        setRefreshing(false);
+      }
+    });
 
-  const fetchTrips = async () => {
+    return () => unsubscribeAuth();
+  }, []);
+
+  // Real-time data listener
+  useEffect(() => {
+    if (!user?.uid) {
+      // Clear trips and stop loading when no user
+      setTrips([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
+    const tripsRef = collection(db, "trips");
+    const q = query(tripsRef, where("userId", "==", user.uid));
+
+    // Set up real-time listener
+    const unsubscribe = onSnapshot(
+      q,
+      (querySnapshot) => {
+        const tripsData = [];
+        querySnapshot.forEach((doc) => {
+          tripsData.push({
+            id: doc.id,
+            ...doc.data(),
+          });
+        });
+
+        // Sort trips by creation date (newest first)
+        tripsData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+        setTrips(tripsData);
+        setLoading(false);
+      },
+      (error) => {
+        console.error("Error listening to trips:", error);
+        setLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [user?.uid]);
+
+  // Pull to refresh handler
+  const onRefresh = useCallback(async () => {
+    if (!user?.uid) return;
+    
+    setRefreshing(true);
     try {
-      let tripStatus = activeTab === "cancelled" ? ["cancelled", "expired"] : [activeTab];
-      
       const tripsRef = collection(db, "trips");
-      const q = query(
-        tripsRef, 
-        where("userId", "==", user.uid),
-        where("status", "in", tripStatus)  // Fetch both cancelled and expired for the cancelled tab
-      );
-      
+      const q = query(tripsRef, where("userId", "==", user.uid));
       const querySnapshot = await getDocs(q);
+
       const tripsData = [];
-      
       querySnapshot.forEach((doc) => {
         tripsData.push({
           id: doc.id,
           ...doc.data(),
         });
       });
-      
+
+      tripsData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
       setTrips(tripsData);
     } catch (error) {
-      console.error("Error fetching trips:", error);
+      console.error("Error refreshing trips:", error);
     } finally {
-      setLoading(false);
+      setRefreshing(false);
     }
-  };
+  }, [user?.uid]);
+
+  // Guest/Login prompt component
+  const renderGuestPrompt = () => (
+    <View style={styles.guestContainer}>
+      <MaterialCommunityIcons name="account-circle-outline" size={60} color="#ccc" />
+      <Text style={styles.guestTitle}>Please Login</Text>
+      <Text style={styles.guestText}>
+        You need to login to view your movements history
+      </Text>
+      <TouchableOpacity
+        style={styles.guestButton}
+        onPress={() => navigation.navigate("login")} // Adjust navigation route as needed
+      >
+        <Text style={styles.guestButtonText}>Login</Text>
+      </TouchableOpacity>
+    </View>
+  );
 
   const renderNoTrips = () => (
     <View style={styles.emptyStateContainer}>
-      <MaterialCommunityIcons name="map-marker-path" size={70} color="#ccc" />
-      <Text style={styles.emptyStateTitle}>No trips found</Text>
+      <MaterialCommunityIcons name="map-marker-path" size={50} color="#ccc" />
+      <Text style={styles.emptyStateTitle}>No movements yet</Text>
       <Text style={styles.emptyStateText}>
-        {activeTab === "active" 
-          ? "You don't have any active trips." 
-          : activeTab === "completed" 
-            ? "You haven't completed any trips yet."
-            : "You don't have any cancelled trips."}
+        Start your journey by booking a movements
       </Text>
-      <TouchableOpacity 
+      <TouchableOpacity
         style={styles.emptyStateButton}
         onPress={() => navigation.navigate("Home")}
       >
-        <Text style={styles.emptyStateButtonText}>Book a Trip</Text>
+        <Text style={styles.emptyStateButtonText}>Book movements</Text>
       </TouchableOpacity>
     </View>
   );
 
   const getStatusColor = (status) => {
-    switch(status) {
+    switch (status?.toLowerCase()) {
       case "active":
-        return "#4CAF50";
+      case "ongoing":
+        return "#10B981";
       case "completed":
-        return "#2196F3";
+        return "#3B82F6";
       case "cancelled":
-        return "#F44336";
       case "expired":
-        return "#F44336";
+        return "#EF4444";
       default:
-        return "#9E9E9E";
+        return "#6B7280";
     }
   };
 
   const formatDate = (dateString) => {
     if (!dateString) return "N/A";
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric'
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
     });
   };
 
   const formatTime = (dateString) => {
     if (!dateString) return "N/A";
     const date = new Date(dateString);
-    return date.toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit'
+    return date.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
     });
   };
 
-  const renderTripCard = (trip) => (
-    <TouchableOpacity 
-      key={trip.id} 
-      style={styles.tripCard}
-      onPress={() => navigation.navigate("TripDetails", { tripId: trip.id })}
+  const getTripIcon = (tripType) => {
+    switch (tripType?.toLowerCase()) {
+      case "bike":
+      case "motorcycle":
+      case "two-wheeler":
+        return "motorcycle";
+      case "car":
+      case "taxi":
+      case "cab":
+        return "directions-car";
+      case "auto":
+      case "rickshaw":
+      case "auto-rickshaw":
+        return "airport-shuttle";
+      case "bus":
+        return "directions-bus";
+      case "truck":
+      case "goods":
+      case "delivery":
+        return "local-shipping";
+      case "walk":
+      case "walking":
+        return "directions-walk";
+      case "cycle":
+      case "bicycle":
+        return "directions-bike";
+      case "train":
+        return "train";
+      case "flight":
+      case "plane":
+        return "flight";
+      default:
+        return "motorcycle"; // Default to motorcycle
+    }
+  };
+
+  const renderExactTripCard = (trip) => (
+    <TouchableOpacity
+      key={trip.id}
+      style={styles.exactCard}
+      onPress={() =>
+        navigation.navigate("TripUserDetails", {
+          userId: trip.userId,
+          pickupLocation: trip.startlocationName?.split(",")[0],
+          destinationLocation: trip.endlocationName?.split(",")[0],
+          tripId: trip.id,
+          tripType: trip.tripType,
+        })
+      }
+      activeOpacity={0.7}
     >
-      <View style={styles.tripHeader}>
-        <View style={styles.tripDateContainer}>
-          <Text style={styles.tripDate}>{formatDate(trip.createdAt)}</Text>
-          <Text style={styles.tripTime}>{formatTime(trip.createdAt)}</Text>
-        </View>
-        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(trip.status) }]}>
-          <Text style={styles.statusText}>{trip.status}</Text>
-        </View>
-      </View>
-      
-      <View style={styles.tripLocations}>
-        <View style={styles.locationLine}>
-          <View style={styles.locationDot} />
-          <View style={styles.locationVerticalLine} />
-          <View style={styles.destinationDot} />
-        </View>
-        
-        <View style={styles.locationTextContainer}>
-          <View style={styles.locationItem}>
-            <Text style={styles.locationLabel}>From</Text>
-            <Text style={styles.locationText} numberOfLines={1}>{trip.startlocationName || "Unknown location"}</Text>
+      {/* Header with dynamic icon, date/time, and status */}
+      <View style={styles.exactCardHeader}>
+        <View style={styles.exactLeftSection}>
+          <View style={styles.bikeIconContainer}>
+            <MaterialIcons
+              name={getTripIcon(trip.tripType || trip.vehicleType)}
+              size={18}
+              color="#fff"
+            />
           </View>
-          
-          <View style={styles.locationItem}>
-            <Text style={styles.locationLabel}>To</Text>
-            <Text style={styles.locationText} numberOfLines={1}>{trip.endlocationName || "Unknown destination"}</Text>
-          </View>
-        </View>
-      </View>
-      
-      <View style={styles.tripDetails}>
-        <View style={styles.tripDetailItem}>
-          <MaterialIcons name="access-time" size={16} color="#777" />
-          <Text style={styles.tripDetailText}>
-            Departure: {formatTime(trip.departureTime)}
+          <Text style={styles.exactDateTimeText}>
+            {formatDate(trip.departureTime)} {formatTime(trip.departureTime)}
           </Text>
         </View>
-        
-        {trip.availableForDelivery && (
-          <View style={styles.tripDetailItem}>
-            <MaterialIcons name="local-shipping" size={16} color="#777" />
-            <Text style={styles.tripDetailText}>Available for delivery</Text>
+
+        <View style={styles.exactRightSection}>
+          <View
+            style={[
+              styles.exactStatusBadge,
+              { backgroundColor: getStatusColor(trip.status) },
+            ]}
+          >
+            <Text style={styles.exactStatusText}>
+              {trip.status?.toUpperCase() || "PENDING"}
+            </Text>
           </View>
-        )}
-      </View>
-      
-      <View style={styles.tripFooter}>
-        <View style={styles.tripPrice}>
-          <Text style={styles.priceLabel}>Trip ID</Text>
-          <Text style={styles.idValue}>{trip.id.substring(0, 8)}...</Text>
+          <MaterialIcons name="chevron-right" size={24} color="#D1D5DB" />
         </View>
-        
-        <TouchableOpacity style={styles.detailsButton}>
-          <Text style={styles.detailsButtonText}>Details</Text>
-          <MaterialIcons name="chevron-right" size={20} color="#777" />
-        </TouchableOpacity>
+      </View>
+
+      {/* Locations with dots and lines */}
+      <View style={styles.exactLocationsContainer}>
+        {/* Location texts */}
+        <View style={styles.exactLocationTexts}>
+          <View style={styles.exactLocationRow}>
+            <MaterialIcons name="location-on" size={16} color="#10B981" />
+            <Text style={styles.exactLocationText} numberOfLines={1}>
+              {trip.startlocationName || "Unknown location"}
+            </Text>
+          </View>
+          <View style={styles.exactLocationRow}>
+            <MaterialIcons name="location-on" size={16} color="#EF4444" />
+            <Text style={styles.exactLocationText} numberOfLines={1}>
+              {trip.endlocationName || "Unknown destination"}
+            </Text>
+          </View>
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -187,53 +283,41 @@ export default function MyTripsScreen({ navigation }) {
 
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerText}>My Trips</Text>
-        <View style={styles.placeholder} />
+        <Text style={styles.headerText}>My Movements</Text>
+        {user && trips.length > 0 && (
+          <Text style={styles.tripCount}>{trips.length} movements</Text>
+        )}
       </View>
 
-      {/* Tabs */}
-      <View style={styles.tabsContainer}>
-        <TouchableOpacity 
-          style={[styles.tab, activeTab === "active" && styles.activeTab]}
-          onPress={() => setActiveTab("active")}
-        >
-          <Text style={[styles.tabText, activeTab === "active" && styles.activeTabText]}>Active</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={[styles.tab, activeTab === "completed" && styles.activeTab]}
-          onPress={() => setActiveTab("completed")}
-        >
-          <Text style={[styles.tabText, activeTab === "completed" && styles.activeTabText]}>Completed</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={[styles.tab, activeTab === "cancelled" && styles.activeTab]}
-          onPress={() => setActiveTab("cancelled")}
-        >
-          <Text style={[styles.tabText, activeTab === "cancelled" && styles.activeTabText]}>Cancelled</Text>
-        </TouchableOpacity>
-
-    
-      </View>
-
-      {/* Trips List */}
-      <ScrollView 
+      {/* Content */}
+      <ScrollView
         style={styles.scrollContainer}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          user ? (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={["#000"]}
+              tintColor="#000"
+            />
+          ) : undefined
+        }
       >
-        {loading ? (
+        {!user ? (
+          renderGuestPrompt()
+        ) : loading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#000" />
-            <Text style={styles.loadingText}>Loading trips...</Text>
+            <Text style={styles.loadingText}>Loading movements...</Text>
           </View>
         ) : trips.length > 0 ? (
-          trips.map(trip => renderTripCard(trip))
+          trips.map((trip) => renderExactTripCard(trip))
         ) : (
           renderNoTrips()
         )}
-        
+
         {/* Bottom Spacing */}
         <View style={styles.bottomSpacing} />
       </ScrollView>
@@ -244,7 +328,7 @@ export default function MyTripsScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#fff",
+    backgroundColor: "#F9FAFB",
   },
   header: {
     flexDirection: "row",
@@ -252,53 +336,27 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 20,
     paddingTop: Platform.OS === "android" ? 40 : 10,
-    paddingBottom: 10,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#f0f0f0",
-    justifyContent: "center",
-    alignItems: "center",
+    paddingBottom: 16,
+    backgroundColor: "#fff",
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
   },
   headerText: {
     fontSize: 20,
     fontFamily: "Bold",
     color: "#000",
   },
-  placeholder: {
-    width: 40,
-  },
-  tabsContainer: {
-    flexDirection: "row",
-    borderBottomWidth: 1,
-    borderBottomColor: "#f0f0f0",
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 16,
-    alignItems: "center",
-  },
-  activeTab: {
-    borderBottomWidth: 3,
-    borderBottomColor: "#000",
-  },
-  tabText: {
-    fontSize: 16,
+  tripCount: {
+    fontSize: 14,
     fontFamily: "Regular",
-    color: "#777",
-  },
-  activeTabText: {
-    color: "#000",
-    fontFamily: "Bold",
+    color: "#6B7280",
   },
   scrollContainer: {
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
+    paddingHorizontal: 16,
+    paddingTop: 16,
   },
   loadingContainer: {
     padding: 40,
@@ -308,41 +366,75 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 16,
     fontFamily: "Regular",
-    color: "#333",
+    color: "#6B7280",
     marginTop: 10,
   },
+  // Guest/Login Prompt Styles
+  guestContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 80,
+    paddingHorizontal: 20,
+  },
+  guestTitle: {
+    fontSize: 20,
+    fontFamily: "Bold",
+    color: "#374151",
+    marginTop: 20,
+  },
+  guestText: {
+    fontSize: 16,
+    fontFamily: "Regular",
+    color: "#6B7280",
+    textAlign: "center",
+    marginTop: 12,
+    lineHeight: 22,
+  },
+  guestButton: {
+    backgroundColor: "#000",
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    borderRadius: 25,
+    marginTop: 30,
+  },
+  guestButtonText: {
+    fontSize: 16,
+    fontFamily: "Bold",
+    color: "#fff",
+  },
+  // Empty State Styles
   emptyStateContainer: {
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 60,
   },
   emptyStateTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontFamily: "Bold",
-    color: "#333",
-    marginTop: 20,
+    color: "#374151",
+    marginTop: 16,
   },
   emptyStateText: {
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: "Regular",
-    color: "#777",
+    color: "#6B7280",
     textAlign: "center",
-    marginTop: 10,
-    paddingHorizontal: 40,
+    marginTop: 8,
   },
   emptyStateButton: {
     backgroundColor: "#000",
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 30,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 20,
     marginTop: 20,
   },
   emptyStateButtonText: {
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: "Bold",
     color: "#fff",
   },
-  tripCard: {
+  // Exact Card Styles
+  exactCard: {
     backgroundColor: "#fff",
     borderRadius: 16,
     marginBottom: 16,
@@ -353,131 +445,94 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     borderWidth: 1,
-    borderColor: "#f0f0f0",
+    borderColor: "#F3F4F6",
   },
-  tripHeader: {
+  exactCardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 16,
   },
-  tripDateContainer: {
-    flexDirection: "column",
+  exactLeftSection: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
   },
-  tripDate: {
-    fontSize: 16,
-    fontFamily: "Bold",
-    color: "#000",
+  bikeIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#000",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
   },
-  tripTime: {
+  exactDateTimeText: {
     fontSize: 14,
-    fontFamily: "Regular",
-    color: "#777",
-    marginTop: 2,
+    fontFamily: "Bold",
+    color: "#111827",
   },
-  statusBadge: {
+  exactRightSection: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  exactStatusBadge: {
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 20,
   },
-  statusText: {
+  exactStatusText: {
     fontSize: 12,
     fontFamily: "Bold",
     color: "#fff",
-    textTransform: "capitalize",
+    letterSpacing: 0.5,
   },
-  tripLocations: {
+  exactLocationsContainer: {
     flexDirection: "row",
-    marginBottom: 16,
+    alignItems: "stretch",
   },
-  locationLine: {
-    width: 24,
+  exactRouteVisual: {
+    width: 20,
     alignItems: "center",
     marginRight: 12,
+    paddingTop: 2,
   },
-  locationDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: "#4CAF50",
-  },
-  locationVerticalLine: {
-    width: 2,
-    height: 30,
-    backgroundColor: "#ddd",
-    marginVertical: 4,
-  },
-  destinationDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: "#F44336",
-  },
-  locationTextContainer: {
-    flex: 1,
-  },
-  locationItem: {
-    marginBottom: 16,
-  },
-  locationLabel: {
-    fontSize: 12,
-    fontFamily: "Regular",
-    color: "#777",
-    marginBottom: 2,
-  },
-  locationText: {
-    fontSize: 14,
-    fontFamily: "Medium",
-    color: "#000",
-  },
-  tripDetails: {
-    marginBottom: 16,
-  },
-  tripDetailItem: {
-    flexDirection: "row",
-    alignItems: "center",
+  exactStartDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#10B981",
     marginBottom: 8,
   },
-  tripDetailText: {
-    fontSize: 14,
-    fontFamily: "Regular",
-    color: "#555",
-    marginLeft: 8,
+  exactRouteLine: {
+    width: 2,
+    flex: 1,
+    backgroundColor: "#E5E7EB",
+    minHeight: 24,
+    marginBottom: 8,
   },
-  tripFooter: {
-    flexDirection: "row",
+  exactEndDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#EF4444",
+  },
+  exactLocationTexts: {
+    flex: 1,
     justifyContent: "space-between",
-    alignItems: "center",
-    borderTopWidth: 1,
-    borderTopColor: "#f0f0f0",
-    paddingTop: 16,
   },
-  tripPrice: {
-    flexDirection: "column",
-  },
-  priceLabel: {
-    fontSize: 12,
-    fontFamily: "Regular",
-    color: "#777",
-  },
-  idValue: {
-    fontSize: 14,
-    fontFamily: "Bold",
-    color: "#000",
-  },
-  detailsButton: {
+  exactLocationRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#f5f5f5",
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
+    marginBottom: 12,
   },
-  detailsButtonText: {
+  exactLocationText: {
     fontSize: 14,
-    fontFamily: "Medium",
-    color: "#333",
-    marginRight: 4,
+    fontFamily: "Regular",
+    color: "#374151",
+    marginLeft: 8,
+    flex: 1,
   },
   bottomSpacing: {
     height: 80,
